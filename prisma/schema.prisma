@@ -1,0 +1,26 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum UserRole {
+  admin
+  manager
+  staff
+}
+
+model User {
+  id                  String   @id @db.Uuid
+  role                UserRole @default(staff)
+  displayName         String?  @map("display_name")
+  desiredHoursPerWeek Int?     @map("desired_hours_per_week")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("users")
+}

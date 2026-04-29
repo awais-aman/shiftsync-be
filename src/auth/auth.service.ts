@@ -8,15 +8,21 @@ export class AuthService {
   constructor(private readonly userRepository: UserRepository) {}
 
   async getCurrentUser(user: AuthenticatedUser): Promise<CurrentUserDto> {
-    const authUser = await this.userRepository.findAuthUserById(user.id);
-    if (!authUser) {
+    const [authUser, profile] = await Promise.all([
+      this.userRepository.findAuthUserById(user.id),
+      this.userRepository.findProfileById(user.id),
+    ]);
+
+    if (!authUser || !profile) {
       throw new NotFoundException(`User ${user.id} not found`);
     }
 
     return {
-      id: authUser.id,
+      id: profile.id,
       email: authUser.email,
-      role: user.role,
+      role: profile.role,
+      displayName: profile.displayName ?? undefined,
+      desiredHoursPerWeek: profile.desiredHoursPerWeek ?? undefined,
       lastSignInAt: authUser.last_sign_in_at ?? undefined,
       emailConfirmed: Boolean(authUser.email_confirmed_at),
     };
