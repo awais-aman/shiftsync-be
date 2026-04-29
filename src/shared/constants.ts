@@ -13,6 +13,7 @@ export enum Tables {
 
 export enum RoutePaths {
   Me = 'me',
+  Locations = 'locations',
 }
 
 export const IsPublic = 'isPublic';
