@@ -28,3 +28,4 @@ export enum RoutePaths {
 export const IsPublic = 'isPublic';
 
 export const PUBLISH_CUTOFF_HOURS = 48;
+export const MIN_REST_HOURS = 10;
