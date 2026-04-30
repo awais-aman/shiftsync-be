@@ -27,9 +27,11 @@ model User {
   createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  certifications    StaffCertification[]
-  skills            StaffSkill[]
-  managedLocations  ManagerLocation[]
+  certifications         StaffCertification[]
+  skills                 StaffSkill[]
+  managedLocations       ManagerLocation[]
+  recurringAvailability  AvailabilityRecurring[]
+  availabilityExceptions AvailabilityException[]
 
   @@map("users")
 }
@@ -120,4 +122,38 @@ model Shift {
   @@index([locationId, startAt])
   @@index([status])
   @@map("shifts")
+}
+
+model AvailabilityRecurring {
+  id        String   @id @default(uuid()) @db.Uuid
+  staffId   String   @map("staff_id") @db.Uuid
+  weekday   Int      @db.SmallInt
+  startTime String   @map("start_time") @db.VarChar(5)
+  endTime   String   @map("end_time") @db.VarChar(5)
+  timezone  String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  staff User @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@unique([staffId, weekday, startTime, timezone])
+  @@index([staffId])
+  @@map("availability_recurring")
+}
+
+model AvailabilityException {
+  id          String   @id @default(uuid()) @db.Uuid
+  staffId     String   @map("staff_id") @db.Uuid
+  date        DateTime @db.Date
+  isAvailable Boolean  @map("is_available")
+  startTime   String?  @map("start_time") @db.VarChar(5)
+  endTime     String?  @map("end_time") @db.VarChar(5)
+  timezone    String
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  staff User @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@index([staffId, date])
+  @@map("availability_exceptions")
 }

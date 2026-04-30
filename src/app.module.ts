@@ -9,6 +9,7 @@ import { LocationsModule } from '@/locations/locations.module';
 import { SkillsModule } from '@/skills/skills.module';
 import { TeamModule } from '@/team/team.module';
 import { ShiftsModule } from '@/shifts/shifts.module';
+import { AvailabilityModule } from '@/availability/availability.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { ShiftsModule } from '@/shifts/shifts.module';
     SkillsModule,
     TeamModule,
     ShiftsModule,
+    AvailabilityModule,
   ],
   controllers: [AppController],
   providers: [AppService],

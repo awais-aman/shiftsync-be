@@ -12,6 +12,8 @@ export enum Tables {
   ManagerLocations = 'manager_locations',
   Shifts = 'shifts',
   ShiftAssignments = 'shift_assignments',
+  AvailabilityRecurring = 'availability_recurring',
+  AvailabilityExceptions = 'availability_exceptions',
 }
 
 export enum RoutePaths {
@@ -20,6 +22,7 @@ export enum RoutePaths {
   Skills = 'skills',
   Team = 'team',
   Shifts = 'shifts',
+  Availability = 'availability',
 }
 
 export const IsPublic = 'isPublic';
