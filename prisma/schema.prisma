@@ -22,6 +22,10 @@ model User {
   createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
+  certifications    StaffCertification[]
+  skills            StaffSkill[]
+  managedLocations  ManagerLocation[]
+
   @@map("users")
 }
 
@@ -33,6 +37,9 @@ model Location {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
+  certifiedStaff StaffCertification[]
+  managers       ManagerLocation[]
+
   @@map("locations")
 }
 
@@ -42,5 +49,46 @@ model Skill {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
+  staff StaffSkill[]
+
   @@map("skills")
+}
+
+model StaffCertification {
+  staffId    String   @map("staff_id") @db.Uuid
+  locationId String   @map("location_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  staff    User     @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@id([staffId, locationId])
+  @@index([locationId])
+  @@map("staff_certifications")
+}
+
+model StaffSkill {
+  staffId   String   @map("staff_id") @db.Uuid
+  skillId   String   @map("skill_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  staff User  @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  skill Skill @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@id([staffId, skillId])
+  @@index([skillId])
+  @@map("staff_skills")
+}
+
+model ManagerLocation {
+  managerId  String   @map("manager_id") @db.Uuid
+  locationId String   @map("location_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  manager  User     @relation(fields: [managerId], references: [id], onDelete: Cascade)
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@id([managerId, locationId])
+  @@index([locationId])
+  @@map("manager_locations")
 }
