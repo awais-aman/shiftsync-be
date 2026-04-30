@@ -19,6 +19,9 @@ export enum RoutePaths {
   Locations = 'locations',
   Skills = 'skills',
   Team = 'team',
+  Shifts = 'shifts',
 }
 
 export const IsPublic = 'isPublic';
+
+export const PUBLISH_CUTOFF_HOURS = 48;
