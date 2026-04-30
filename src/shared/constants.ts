@@ -14,6 +14,7 @@ export enum Tables {
 export enum RoutePaths {
   Me = 'me',
   Locations = 'locations',
+  Skills = 'skills',
 }
 
 export const IsPublic = 'isPublic';

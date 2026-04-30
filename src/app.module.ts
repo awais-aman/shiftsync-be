@@ -6,6 +6,7 @@ import { SupabaseModule } from '@/supabase/supabase.module';
 import { DatabaseModule } from '@/database/database.module';
 import { AuthModule } from '@/auth/auth.module';
 import { LocationsModule } from '@/locations/locations.module';
+import { SkillsModule } from '@/skills/skills.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { LocationsModule } from '@/locations/locations.module';
     DatabaseModule,
     AuthModule,
     LocationsModule,
+    SkillsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
