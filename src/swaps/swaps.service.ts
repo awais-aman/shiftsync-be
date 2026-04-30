@@ -14,6 +14,7 @@ import {
   SwapRepository,
   type SwapWithRelations,
 } from '@/database/repositories/swap.repository';
+import { NotificationsService } from '@/notifications/notifications.service';
 import { CreateSwapRequestDto } from '@/swaps/dto/create-swap.dto';
 import { SwapRequestDto } from '@/swaps/dto/swap.dto';
 import {
@@ -37,6 +38,7 @@ export class SwapsService {
     private readonly swapRepository: SwapRepository,
     private readonly assignmentRepository: AssignmentRepository,
     private readonly constraintEngine: ConstraintEngine,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async create(
@@ -110,6 +112,18 @@ export class SwapsService {
       targetAssignmentId: dto.targetAssignmentId ?? null,
       expiresAt,
     });
+
+    // Notify the targeted peer for swaps. For drops, no peer to notify; managers
+    // see the request in their approval queue.
+    if (dto.type === SwapType.swap && dto.targetStaffId) {
+      void this.notificationsService.notify({
+        userId: dto.targetStaffId,
+        type: 'swap_requested',
+        title: 'A coworker wants to swap shifts with you',
+        payload: { swapId: created.id },
+        email: true,
+      });
+    }
     return this.toDto((await this.swapRepository.findById(created.id))!);
   }
 
@@ -151,6 +165,15 @@ export class SwapsService {
     const updated = await this.swapRepository.updateStatus(id, {
       status: SwapStatus.cancelled,
     });
+    // Notify the peer if there was one (so they know the request vanished).
+    if (swap.targetStaffId) {
+      void this.notificationsService.notify({
+        userId: swap.targetStaffId,
+        type: 'swap_cancelled',
+        title: 'A swap request was cancelled by the requester',
+        payload: { swapId: id },
+      });
+    }
     return this.toDto({ ...swap, ...updated });
   }
 
@@ -171,6 +194,14 @@ export class SwapsService {
     }
     const updated = await this.swapRepository.updateStatus(id, {
       status: SwapStatus.accepted_by_peer,
+    });
+    // Notify the requester their peer accepted; managers see it in the queue.
+    void this.notificationsService.notify({
+      userId: swap.requesterId,
+      type: 'swap_accepted',
+      title: 'Your swap was accepted by the peer',
+      body: 'Awaiting manager approval',
+      payload: { swapId: id },
     });
     return this.toDto({ ...swap, ...updated });
   }
@@ -307,6 +338,23 @@ export class SwapsService {
 
       const refreshed = await this.swapRepository.findById(id);
       if (!refreshed) throw new NotFoundException('Swap disappeared');
+
+      // Notify everyone affected (requester always, peer if swap).
+      const targets: string[] = [refreshed.requesterId];
+      if (refreshed.targetStaffId) targets.push(refreshed.targetStaffId);
+      void this.notificationsService.notifyMany(
+        targets.map((userId) => ({
+          userId,
+          type: 'swap_approved',
+          title:
+            refreshed.type === SwapType.drop
+              ? 'Your drop request was approved'
+              : 'Your swap was approved by the manager',
+          payload: { swapId: id },
+          email: true,
+        })),
+      );
+
       return this.toDto(refreshed);
     });
   }
@@ -323,6 +371,17 @@ export class SwapsService {
       decidedAt: new Date(),
       rejectionReason: reason ?? null,
     });
+    const targets: string[] = [swap.requesterId];
+    if (swap.targetStaffId) targets.push(swap.targetStaffId);
+    void this.notificationsService.notifyMany(
+      targets.map((userId) => ({
+        userId,
+        type: 'swap_rejected',
+        title: 'A swap or drop request was rejected by the manager',
+        body: reason ?? undefined,
+        payload: { swapId: id },
+      })),
+    );
     return this.toDto({ ...swap, ...updated });
   }
 

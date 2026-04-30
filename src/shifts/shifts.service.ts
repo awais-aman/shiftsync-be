@@ -16,6 +16,8 @@ import { LocationRepository } from '@/database/repositories/location.repository'
 import { SkillRepository } from '@/database/repositories/skill.repository';
 import { SwapRepository } from '@/database/repositories/swap.repository';
 import { LocationDto } from '@/locations/dto/location.dto';
+import { NotificationsService } from '@/notifications/notifications.service';
+import { PrismaService } from '@/database/prisma.service';
 import { SkillDto } from '@/skills/dto/skill.dto';
 import { CreateShiftDto } from '@/shifts/dto/create-shift.dto';
 import { ShiftDto } from '@/shifts/dto/shift.dto';
@@ -31,6 +33,8 @@ export class ShiftsService {
     private readonly locationRepository: LocationRepository,
     private readonly skillRepository: SkillRepository,
     private readonly swapRepository: SwapRepository,
+    private readonly notificationsService: NotificationsService,
+    private readonly prisma: PrismaService,
   ) {}
 
   async list(filters: ListShiftsFilters): Promise<ShiftDto[]> {
@@ -134,6 +138,12 @@ export class ShiftsService {
       );
     }
 
+    void this.notifyAssignees(id, {
+      type: 'shift_edited',
+      title: 'A shift you\'re assigned to was edited',
+      payload: { shiftId: id },
+    });
+
     return this.toDto(updated);
   }
 
@@ -164,6 +174,11 @@ export class ShiftsService {
         'Shift was modified by someone else; reload and try again',
       );
     }
+    void this.notifyAssignees(id, {
+      type: 'shift_published',
+      title: 'A shift you\'re assigned to was published',
+      payload: { shiftId: id },
+    });
     return this.toDto(updated);
   }
 
@@ -190,6 +205,32 @@ export class ShiftsService {
       );
     }
     return this.toDto(updated);
+  }
+
+  private async notifyAssignees(
+    shiftId: string,
+    template: {
+      type: import('@prisma/client').NotificationType;
+      title: string;
+      body?: string;
+      payload?: Record<string, unknown>;
+    },
+  ): Promise<void> {
+    const assignments = await this.prisma.shiftAssignment.findMany({
+      where: { shiftId },
+      select: { staffId: true },
+    });
+    if (assignments.length === 0) return;
+    await this.notificationsService.notifyMany(
+      assignments.map((a) => ({
+        userId: a.staffId,
+        type: template.type,
+        title: template.title,
+        body: template.body,
+        payload: template.payload,
+        email: true,
+      })),
+    );
   }
 
   /**

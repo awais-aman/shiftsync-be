@@ -16,6 +16,7 @@ import {
   type EvaluationData,
 } from '@/database/repositories/assignment.repository';
 import { AssignmentDto } from '@/assignments/dto/assignment.dto';
+import { NotificationsService } from '@/notifications/notifications.service';
 import { Provides } from '@/shared/constants';
 import type { ConstraintResult } from '@/types/assignment';
 
@@ -27,6 +28,7 @@ export class AssignmentsService {
     @Inject(Provides.Supabase) private readonly supabase: SupabaseClient,
     private readonly assignmentRepository: AssignmentRepository,
     private readonly constraintEngine: ConstraintEngine,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async listForShift(shiftId: string): Promise<AssignmentDto[]> {
@@ -56,6 +58,14 @@ export class AssignmentsService {
         },
       );
       const email = await this.fetchEmail(staffId);
+      void this.notificationsService.notify({
+        userId: staffId,
+        type: 'shift_assigned',
+        title: 'You\'ve been assigned to a shift',
+        body: `Shift ${shiftId} starts soon — check your schedule`,
+        payload: { shiftId, assignmentId: created.id },
+        email: true,
+      });
       return this.toDto(created, email);
     } catch (error) {
       if (error instanceof AssignmentRejectedError) {
@@ -101,6 +111,13 @@ export class AssignmentsService {
       throw new NotFoundException('Assignment not found');
     }
     await this.assignmentRepository.delete(shiftId, staffId);
+    void this.notificationsService.notify({
+      userId: staffId,
+      type: 'shift_unassigned',
+      title: 'You were unassigned from a shift',
+      payload: { shiftId },
+      email: true,
+    });
   }
 
   private runEngine(

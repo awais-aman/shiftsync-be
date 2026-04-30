@@ -14,6 +14,7 @@ import { ConstraintsModule } from '@/constraints/constraints.module';
 import { AssignmentsModule } from '@/assignments/assignments.module';
 import { OvertimeModule } from '@/overtime/overtime.module';
 import { SwapsModule } from '@/swaps/swaps.module';
+import { NotificationsModule } from '@/notifications/notifications.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { SwapsModule } from '@/swaps/swaps.module';
     AssignmentsModule,
     OvertimeModule,
     SwapsModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

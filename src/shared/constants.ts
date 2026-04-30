@@ -16,6 +16,7 @@ export enum Tables {
   AvailabilityExceptions = 'availability_exceptions',
   OvertimeOverrides = 'overtime_overrides',
   SwapRequests = 'swap_requests',
+  Notifications = 'notifications',
 }
 
 export enum RoutePaths {
@@ -27,6 +28,7 @@ export enum RoutePaths {
   Availability = 'availability',
   Overtime = 'overtime',
   SwapRequests = 'swap-requests',
+  Notifications = 'notifications',
 }
 
 export const IsPublic = 'isPublic';
