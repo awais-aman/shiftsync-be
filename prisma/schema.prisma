@@ -47,6 +47,30 @@ enum NotificationType {
   overtime_warning
 }
 
+enum AuditEntityType {
+  shift
+  shift_assignment
+  swap_request
+  overtime_override
+}
+
+enum AuditAction {
+  create
+  update
+  delete
+  publish
+  unpublish
+  assign
+  unassign
+  swap_create
+  swap_accept
+  swap_approve
+  swap_reject
+  swap_cancel
+  override_grant
+  override_revoke
+}
+
 model User {
   id                  String   @id @db.Uuid
   role                UserRole @default(staff)
@@ -273,4 +297,23 @@ model Notification {
   @@index([userId, createdAt(sort: Desc)])
   @@index([userId, readAt])
   @@map("notifications")
+}
+
+model AuditLog {
+  id          String          @id @default(uuid()) @db.Uuid
+  actorId     String?         @map("actor_id") @db.Uuid
+  entityType  AuditEntityType @map("entity_type")
+  entityId    String          @map("entity_id") @db.Uuid
+  action      AuditAction
+  before      Json?
+  after       Json?
+  /// Optional location for filtering audit exports per location.
+  locationId  String?         @map("location_id") @db.Uuid
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([entityType, entityId, createdAt(sort: Desc)])
+  @@index([actorId, createdAt(sort: Desc)])
+  @@index([locationId, createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc)])
+  @@map("audit_log")
 }

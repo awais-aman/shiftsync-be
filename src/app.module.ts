@@ -15,6 +15,7 @@ import { AssignmentsModule } from '@/assignments/assignments.module';
 import { OvertimeModule } from '@/overtime/overtime.module';
 import { SwapsModule } from '@/swaps/swaps.module';
 import { NotificationsModule } from '@/notifications/notifications.module';
+import { AuditModule } from '@/audit/audit.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { NotificationsModule } from '@/notifications/notifications.module';
     OvertimeModule,
     SwapsModule,
     NotificationsModule,
+    AuditModule,
   ],
   controllers: [AppController],
   providers: [AppService],

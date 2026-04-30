@@ -14,6 +14,7 @@ import {
   SwapRepository,
   type SwapWithRelations,
 } from '@/database/repositories/swap.repository';
+import { AuditService } from '@/audit/audit.service';
 import { NotificationsService } from '@/notifications/notifications.service';
 import { CreateSwapRequestDto } from '@/swaps/dto/create-swap.dto';
 import { SwapRequestDto } from '@/swaps/dto/swap.dto';
@@ -39,6 +40,7 @@ export class SwapsService {
     private readonly assignmentRepository: AssignmentRepository,
     private readonly constraintEngine: ConstraintEngine,
     private readonly notificationsService: NotificationsService,
+    private readonly auditService: AuditService,
   ) {}
 
   async create(
@@ -124,6 +126,17 @@ export class SwapsService {
         email: true,
       });
     }
+    void this.auditService.record({
+      actorId: staffId,
+      entityType: 'swap_request',
+      entityId: created.id,
+      action: 'swap_create',
+      after: {
+        type: created.type,
+        requesterId: staffId,
+        targetStaffId: dto.targetStaffId,
+      },
+    });
     return this.toDto((await this.swapRepository.findById(created.id))!);
   }
 
@@ -174,6 +187,14 @@ export class SwapsService {
         payload: { swapId: id },
       });
     }
+    void this.auditService.record({
+      actorId: requesterId,
+      entityType: 'swap_request',
+      entityId: id,
+      action: 'swap_cancel',
+      before: { status: swap.status },
+      after: { status: SwapStatus.cancelled },
+    });
     return this.toDto({ ...swap, ...updated });
   }
 
@@ -202,6 +223,14 @@ export class SwapsService {
       title: 'Your swap was accepted by the peer',
       body: 'Awaiting manager approval',
       payload: { swapId: id },
+    });
+    void this.auditService.record({
+      actorId: peerId,
+      entityType: 'swap_request',
+      entityId: id,
+      action: 'swap_accept',
+      before: { status: swap.status },
+      after: { status: SwapStatus.accepted_by_peer },
     });
     return this.toDto({ ...swap, ...updated });
   }
@@ -354,6 +383,14 @@ export class SwapsService {
           email: true,
         })),
       );
+      void this.auditService.record({
+        actorId: decidedById,
+        entityType: 'swap_request',
+        entityId: id,
+        action: 'swap_approve',
+        before: { status: swap.status },
+        after: { status: SwapStatus.approved },
+      });
 
       return this.toDto(refreshed);
     });
@@ -382,6 +419,14 @@ export class SwapsService {
         payload: { swapId: id },
       })),
     );
+    void this.auditService.record({
+      actorId: decidedById,
+      entityType: 'swap_request',
+      entityId: id,
+      action: 'swap_reject',
+      before: { status: swap.status },
+      after: { status: SwapStatus.rejected, reason },
+    });
     return this.toDto({ ...swap, ...updated });
   }
 

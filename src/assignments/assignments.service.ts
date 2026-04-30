@@ -16,7 +16,9 @@ import {
   type EvaluationData,
 } from '@/database/repositories/assignment.repository';
 import { AssignmentDto } from '@/assignments/dto/assignment.dto';
+import { AuditService } from '@/audit/audit.service';
 import { NotificationsService } from '@/notifications/notifications.service';
+import { PrismaService } from '@/database/prisma.service';
 import { Provides } from '@/shared/constants';
 import type { ConstraintResult } from '@/types/assignment';
 
@@ -29,6 +31,8 @@ export class AssignmentsService {
     private readonly assignmentRepository: AssignmentRepository,
     private readonly constraintEngine: ConstraintEngine,
     private readonly notificationsService: NotificationsService,
+    private readonly auditService: AuditService,
+    private readonly prisma: PrismaService,
   ) {}
 
   async listForShift(shiftId: string): Promise<AssignmentDto[]> {
@@ -66,6 +70,13 @@ export class AssignmentsService {
         payload: { shiftId, assignmentId: created.id },
         email: true,
       });
+      void this.auditService.record({
+        actorId: assignedById,
+        entityType: 'shift_assignment',
+        entityId: created.id,
+        action: 'assign',
+        after: { shiftId, staffId, assignmentId: created.id },
+      });
       return this.toDto(created, email);
     } catch (error) {
       if (error instanceof AssignmentRejectedError) {
@@ -91,6 +102,83 @@ export class AssignmentsService {
     }
   }
 
+  /**
+   * Top-N qualified staff suggestions for a shift, ranked by lowest weekly
+   * hours so far (fairness bias). Returns staff who would clear every
+   * constraint engine rule.
+   */
+  async suggest(
+    shiftId: string,
+    limit: number,
+  ): Promise<
+    Array<{ staffId: string; displayName: string | null; weeklyHours: number }>
+  > {
+    const shiftRow = await this.prisma.shift.findUnique({
+      where: { id: shiftId },
+      select: { locationId: true, requiredSkillId: true },
+    });
+    if (!shiftRow) throw new NotFoundException(`Shift ${shiftId} not found`);
+
+    // Pre-filter: role=staff, has skill, certified at location. The engine
+    // does the rest (availability, overlap, min-rest, overtime).
+    const candidates = await this.prisma.user.findMany({
+      where: {
+        role: 'staff',
+        skills: { some: { skillId: shiftRow.requiredSkillId } },
+        certifications: { some: { locationId: shiftRow.locationId } },
+      },
+      select: { id: true, displayName: true },
+    });
+
+    const ranked: Array<{
+      staffId: string;
+      displayName: string | null;
+      weeklyHours: number;
+    }> = [];
+
+    for (const staff of candidates) {
+      const data = await this.assignmentRepository.loadEvaluationData(
+        shiftId,
+        staff.id,
+      );
+      if (!data.shift || !data.staff) continue;
+      const result = this.runEngine(data, shiftId, staff.id);
+      if (!result.allowed) continue;
+      ranked.push({
+        staffId: staff.id,
+        displayName: staff.displayName,
+        weeklyHours: this.weeklyHoursFor(data),
+      });
+    }
+
+    ranked.sort((a, b) => a.weeklyHours - b.weeklyHours);
+    return ranked.slice(0, limit);
+  }
+
+  private weeklyHoursFor(data: EvaluationData): number {
+    if (!data.shift) return 0;
+    // Sunday-anchored week containing the shift start, in shift location tz.
+    // Approximation: bucket by UTC day-of-week with no tz conversion (good
+    // enough for fairness ranking; precise math lives in the engine).
+    const shiftStart = data.shift.startAt;
+    const day = shiftStart.getUTCDay();
+    const sunday = new Date(shiftStart);
+    sunday.setUTCDate(sunday.getUTCDate() - day);
+    sunday.setUTCHours(0, 0, 0, 0);
+    const nextSunday = new Date(sunday);
+    nextSunday.setUTCDate(nextSunday.getUTCDate() + 7);
+
+    let hours = 0;
+    for (const a of data.staffAssignments) {
+      if (a.shift.startAt >= sunday && a.shift.startAt < nextSunday) {
+        hours +=
+          (a.shift.endAt.getTime() - a.shift.startAt.getTime()) /
+          (1000 * 60 * 60);
+      }
+    }
+    return hours;
+  }
+
   async dryRun(shiftId: string, staffId: string): Promise<ConstraintResult> {
     const data = await this.assignmentRepository.loadEvaluationData(
       shiftId,
@@ -105,7 +193,11 @@ export class AssignmentsService {
     return this.runEngine(data, shiftId, staffId);
   }
 
-  async delete(shiftId: string, staffId: string): Promise<void> {
+  async delete(
+    shiftId: string,
+    staffId: string,
+    actorId: string,
+  ): Promise<void> {
     const existing = await this.assignmentRepository.findOne(shiftId, staffId);
     if (!existing) {
       throw new NotFoundException('Assignment not found');
@@ -117,6 +209,13 @@ export class AssignmentsService {
       title: 'You were unassigned from a shift',
       payload: { shiftId },
       email: true,
+    });
+    void this.auditService.record({
+      actorId,
+      entityType: 'shift_assignment',
+      entityId: existing.id,
+      action: 'unassign',
+      before: { shiftId, staffId, assignmentId: existing.id },
     });
   }
 

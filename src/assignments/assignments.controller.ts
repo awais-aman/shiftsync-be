@@ -34,6 +34,7 @@ import { AssignmentsService } from '@/assignments/assignments.service';
 import { AssignmentDto } from '@/assignments/dto/assignment.dto';
 import { CreateAssignmentDto } from '@/assignments/dto/create-assignment.dto';
 import { DryRunResultDto } from '@/assignments/dto/dry-run-result.dto';
+import { SUGGESTION_TOP_N } from '@/shared/constants';
 
 @ApiTags('Assignments')
 @ApiBearerAuth()
@@ -68,6 +69,36 @@ export class AssignmentsController {
     return this.assignmentsService.dryRun(shiftId, staffId);
   }
 
+  @Get('suggestions')
+  @Roles(UserRole.admin, UserRole.manager)
+  @ApiOperation({
+    summary:
+      'Top-N qualified staff who clear every constraint, ranked by lowest weekly hours',
+  })
+  @ApiOkResponse({
+    schema: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          staffId: { type: 'string', format: 'uuid' },
+          displayName: { type: 'string', nullable: true },
+          weeklyHours: { type: 'number' },
+        },
+      },
+    },
+  })
+  suggestions(
+    @Param('shiftId', new ParseUUIDPipe()) shiftId: string,
+    @Query('limit') limit?: string,
+  ): Promise<
+    Array<{ staffId: string; displayName: string | null; weeklyHours: number }>
+  > {
+    const parsed = limit ? Number(limit) : SUGGESTION_TOP_N;
+    const cap = Number.isFinite(parsed) && parsed > 0 ? parsed : SUGGESTION_TOP_N;
+    return this.assignmentsService.suggest(shiftId, Math.min(cap, 20));
+  }
+
   @Post()
   @Roles(UserRole.admin, UserRole.manager)
   @ApiOperation({
@@ -98,7 +129,8 @@ export class AssignmentsController {
   async delete(
     @Param('shiftId', new ParseUUIDPipe()) shiftId: string,
     @Param('staffId', new ParseUUIDPipe()) staffId: string,
+    @CurrentUser() user: AuthenticatedUser,
   ): Promise<void> {
-    await this.assignmentsService.delete(shiftId, staffId);
+    await this.assignmentsService.delete(shiftId, staffId, user.id);
   }
 }

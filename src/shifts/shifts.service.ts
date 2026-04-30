@@ -15,6 +15,7 @@ import {
 import { LocationRepository } from '@/database/repositories/location.repository';
 import { SkillRepository } from '@/database/repositories/skill.repository';
 import { SwapRepository } from '@/database/repositories/swap.repository';
+import { AuditService } from '@/audit/audit.service';
 import { LocationDto } from '@/locations/dto/location.dto';
 import { NotificationsService } from '@/notifications/notifications.service';
 import { PrismaService } from '@/database/prisma.service';
@@ -34,6 +35,7 @@ export class ShiftsService {
     private readonly skillRepository: SkillRepository,
     private readonly swapRepository: SwapRepository,
     private readonly notificationsService: NotificationsService,
+    private readonly auditService: AuditService,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -48,7 +50,7 @@ export class ShiftsService {
     return this.toDto(shift);
   }
 
-  async create(dto: CreateShiftDto): Promise<ShiftDto> {
+  async create(dto: CreateShiftDto, actorId: string): Promise<ShiftDto> {
     if (dto.endAt <= dto.startAt) {
       throw new BadRequestException('endAt must be after startAt');
     }
@@ -73,12 +75,25 @@ export class ShiftsService {
       isPremium,
       status: ShiftStatus.draft,
     });
+    void this.auditService.record({
+      actorId,
+      entityType: 'shift',
+      entityId: created.id,
+      action: 'create',
+      after: this.snapshot(created),
+      locationId: created.locationId,
+    });
     return this.toDto(created);
   }
 
-  async update(id: string, dto: UpdateShiftDto): Promise<ShiftDto> {
+  async update(
+    id: string,
+    dto: UpdateShiftDto,
+    actorId: string,
+  ): Promise<ShiftDto> {
     const existing = await this.shiftRepository.findById(id);
     if (!existing) throw new NotFoundException(`Shift ${id} not found`);
+    const before = this.snapshot(existing);
 
     const startAt = dto.startAt ?? existing.startAt;
     const endAt = dto.endAt ?? existing.endAt;
@@ -144,15 +159,38 @@ export class ShiftsService {
       payload: { shiftId: id },
     });
 
+    void this.auditService.record({
+      actorId,
+      entityType: 'shift',
+      entityId: id,
+      action: 'update',
+      before,
+      after: this.snapshot(updated),
+      locationId: updated.locationId,
+    });
+
     return this.toDto(updated);
   }
 
-  async delete(id: string): Promise<void> {
-    await this.findById(id);
+  async delete(id: string, actorId: string): Promise<void> {
+    const existing = await this.shiftRepository.findById(id);
+    if (!existing) throw new NotFoundException(`Shift ${id} not found`);
     await this.shiftRepository.delete(id);
+    void this.auditService.record({
+      actorId,
+      entityType: 'shift',
+      entityId: id,
+      action: 'delete',
+      before: this.snapshot(existing),
+      locationId: existing.locationId,
+    });
   }
 
-  async publish(id: string, expectedVersion: number): Promise<ShiftDto> {
+  async publish(
+    id: string,
+    expectedVersion: number,
+    actorId: string,
+  ): Promise<ShiftDto> {
     const existing = await this.shiftRepository.findById(id);
     if (!existing) throw new NotFoundException(`Shift ${id} not found`);
     this.assertWithinCutoff(existing.startAt, 'publish');
@@ -179,10 +217,23 @@ export class ShiftsService {
       title: 'A shift you\'re assigned to was published',
       payload: { shiftId: id },
     });
+    void this.auditService.record({
+      actorId,
+      entityType: 'shift',
+      entityId: id,
+      action: 'publish',
+      before: this.snapshot(existing),
+      after: this.snapshot(updated),
+      locationId: updated.locationId,
+    });
     return this.toDto(updated);
   }
 
-  async unpublish(id: string, expectedVersion: number): Promise<ShiftDto> {
+  async unpublish(
+    id: string,
+    expectedVersion: number,
+    actorId: string,
+  ): Promise<ShiftDto> {
     const existing = await this.shiftRepository.findById(id);
     if (!existing) throw new NotFoundException(`Shift ${id} not found`);
     this.assertWithinCutoff(existing.startAt, 'unpublish');
@@ -204,7 +255,30 @@ export class ShiftsService {
         'Shift was modified by someone else; reload and try again',
       );
     }
+    void this.auditService.record({
+      actorId,
+      entityType: 'shift',
+      entityId: id,
+      action: 'unpublish',
+      before: this.snapshot(existing),
+      after: this.snapshot(updated),
+      locationId: updated.locationId,
+    });
     return this.toDto(updated);
+  }
+
+  private snapshot(row: ShiftWithRelations): Record<string, unknown> {
+    return {
+      id: row.id,
+      locationId: row.locationId,
+      requiredSkillId: row.requiredSkillId,
+      startAt: row.startAt.toISOString(),
+      endAt: row.endAt.toISOString(),
+      headcount: row.headcount,
+      isPremium: row.isPremium,
+      status: row.status,
+      version: row.version,
+    };
   }
 
   private async notifyAssignees(

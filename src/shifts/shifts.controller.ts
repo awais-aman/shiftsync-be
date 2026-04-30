@@ -26,10 +26,12 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
+import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { Roles } from '@/common/decorators/roles.decorator';
 import { RolesGuard } from '@/common/guards/roles.guard';
 import { SupabaseJwtGuard } from '@/common/guards/supabase-jwt.guard';
 import { RoutePaths } from '@/shared/constants';
+import type { AuthenticatedUser } from '@/types/auth';
 import { CreateShiftDto } from '@/shifts/dto/create-shift.dto';
 import { ListShiftsDto } from '@/shifts/dto/list-shifts.dto';
 import { ShiftDto } from '@/shifts/dto/shift.dto';
@@ -76,8 +78,11 @@ export class ShiftsController {
   @ApiBadRequestResponse({
     description: 'Invalid times, location, or required skill',
   })
-  create(@Body() dto: CreateShiftDto): Promise<ShiftDto> {
-    return this.shiftsService.create(dto);
+  create(
+    @Body() dto: CreateShiftDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<ShiftDto> {
+    return this.shiftsService.create(dto, user.id);
   }
 
   @Patch(':id')
@@ -92,8 +97,9 @@ export class ShiftsController {
   update(
     @Param('id', new ParseUUIDPipe()) id: string,
     @Body() dto: UpdateShiftDto,
+    @CurrentUser() user: AuthenticatedUser,
   ): Promise<ShiftDto> {
-    return this.shiftsService.update(id, dto);
+    return this.shiftsService.update(id, dto, user.id);
   }
 
   @Post(':id/publish')
@@ -110,8 +116,9 @@ export class ShiftsController {
   publish(
     @Param('id', new ParseUUIDPipe()) id: string,
     @Body() body: VersionedActionDto,
+    @CurrentUser() user: AuthenticatedUser,
   ): Promise<ShiftDto> {
-    return this.shiftsService.publish(id, body.version);
+    return this.shiftsService.publish(id, body.version, user.id);
   }
 
   @Post(':id/unpublish')
@@ -129,8 +136,9 @@ export class ShiftsController {
   unpublish(
     @Param('id', new ParseUUIDPipe()) id: string,
     @Body() body: VersionedActionDto,
+    @CurrentUser() user: AuthenticatedUser,
   ): Promise<ShiftDto> {
-    return this.shiftsService.unpublish(id, body.version);
+    return this.shiftsService.unpublish(id, body.version, user.id);
   }
 
   @Delete(':id')
@@ -141,7 +149,8 @@ export class ShiftsController {
   @ApiNotFoundResponse({ description: 'Shift not found' })
   async delete(
     @Param('id', new ParseUUIDPipe()) id: string,
+    @CurrentUser() user: AuthenticatedUser,
   ): Promise<void> {
-    await this.shiftsService.delete(id);
+    await this.shiftsService.delete(id, user.id);
   }
 }

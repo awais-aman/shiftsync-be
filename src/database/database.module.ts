@@ -1,6 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { PrismaService } from '@/database/prisma.service';
 import { AssignmentRepository } from '@/database/repositories/assignment.repository';
+import { AuditRepository } from '@/database/repositories/audit.repository';
 import { AvailabilityRepository } from '@/database/repositories/availability.repository';
 import { LocationRepository } from '@/database/repositories/location.repository';
 import { NotificationRepository } from '@/database/repositories/notification.repository';
@@ -25,6 +26,7 @@ import { UserRepository } from '@/database/repositories/user.repository';
     OvertimeOverrideRepository,
     SwapRepository,
     NotificationRepository,
+    AuditRepository,
   ],
   exports: [
     PrismaService,
@@ -38,6 +40,7 @@ import { UserRepository } from '@/database/repositories/user.repository';
     OvertimeOverrideRepository,
     SwapRepository,
     NotificationRepository,
+    AuditRepository,
   ],
 })
 export class DatabaseModule {}

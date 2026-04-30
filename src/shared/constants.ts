@@ -17,6 +17,7 @@ export enum Tables {
   OvertimeOverrides = 'overtime_overrides',
   SwapRequests = 'swap_requests',
   Notifications = 'notifications',
+  AuditLog = 'audit_log',
 }
 
 export enum RoutePaths {
@@ -29,7 +30,10 @@ export enum RoutePaths {
   Overtime = 'overtime',
   SwapRequests = 'swap-requests',
   Notifications = 'notifications',
+  Audit = 'audit',
 }
+
+export const SUGGESTION_TOP_N = 3;
 
 export const IsPublic = 'isPublic';
 
