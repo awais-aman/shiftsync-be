@@ -6,6 +6,7 @@ import { LocationRepository } from '@/database/repositories/location.repository'
 import { OvertimeOverrideRepository } from '@/database/repositories/overtime-override.repository';
 import { ShiftRepository } from '@/database/repositories/shift.repository';
 import { SkillRepository } from '@/database/repositories/skill.repository';
+import { SwapRepository } from '@/database/repositories/swap.repository';
 import { TeamRepository } from '@/database/repositories/team.repository';
 import { UserRepository } from '@/database/repositories/user.repository';
 
@@ -21,6 +22,7 @@ import { UserRepository } from '@/database/repositories/user.repository';
     AvailabilityRepository,
     AssignmentRepository,
     OvertimeOverrideRepository,
+    SwapRepository,
   ],
   exports: [
     PrismaService,
@@ -32,6 +34,7 @@ import { UserRepository } from '@/database/repositories/user.repository';
     AvailabilityRepository,
     AssignmentRepository,
     OvertimeOverrideRepository,
+    SwapRepository,
   ],
 })
 export class DatabaseModule {}

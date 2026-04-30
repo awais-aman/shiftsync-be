@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { ShiftStatus } from '@prisma/client';
@@ -13,6 +14,7 @@ import {
 } from '@/database/repositories/shift.repository';
 import { LocationRepository } from '@/database/repositories/location.repository';
 import { SkillRepository } from '@/database/repositories/skill.repository';
+import { SwapRepository } from '@/database/repositories/swap.repository';
 import { LocationDto } from '@/locations/dto/location.dto';
 import { SkillDto } from '@/skills/dto/skill.dto';
 import { CreateShiftDto } from '@/shifts/dto/create-shift.dto';
@@ -22,10 +24,13 @@ import { PUBLISH_CUTOFF_HOURS } from '@/shared/constants';
 
 @Injectable()
 export class ShiftsService {
+  private readonly logger = new Logger(ShiftsService.name);
+
   constructor(
     private readonly shiftRepository: ShiftRepository,
     private readonly locationRepository: LocationRepository,
     private readonly skillRepository: SkillRepository,
+    private readonly swapRepository: SwapRepository,
   ) {}
 
   async list(filters: ListShiftsFilters): Promise<ShiftDto[]> {
@@ -77,7 +82,6 @@ export class ShiftsService {
       throw new BadRequestException('endAt must be after startAt');
     }
 
-    const locationId = dto.locationId ?? existing.locationId;
     if (dto.locationId && dto.locationId !== existing.locationId) {
       const location = await this.locationRepository.findById(dto.locationId);
       if (!location) {
@@ -120,6 +124,16 @@ export class ShiftsService {
         'Shift was modified by someone else; reload and try again',
       );
     }
+
+    // Auto-cancel any active swap requests touching this shift, since the
+    // edit may have invalidated the original constraints.
+    const cancelledCount = await this.swapRepository.cancelActiveForShift(id);
+    if (cancelledCount > 0) {
+      this.logger.log(
+        `Cancelled ${cancelledCount} active swap request(s) due to edit of shift ${id}`,
+      );
+    }
+
     return this.toDto(updated);
   }
 
