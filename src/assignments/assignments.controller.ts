@@ -8,6 +8,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -32,6 +33,7 @@ import type { AuthenticatedUser } from '@/types/auth';
 import { AssignmentsService } from '@/assignments/assignments.service';
 import { AssignmentDto } from '@/assignments/dto/assignment.dto';
 import { CreateAssignmentDto } from '@/assignments/dto/create-assignment.dto';
+import { DryRunResultDto } from '@/assignments/dto/dry-run-result.dto';
 
 @ApiTags('Assignments')
 @ApiBearerAuth()
@@ -51,6 +53,21 @@ export class AssignmentsController {
     return this.assignmentsService.listForShift(shiftId);
   }
 
+  @Get('dry-run')
+  @Roles(UserRole.admin, UserRole.manager)
+  @ApiOperation({
+    summary:
+      'Preview the constraint engine result for assigning a staff member to this shift',
+  })
+  @ApiOkResponse({ type: DryRunResultDto })
+  @ApiNotFoundResponse({ description: 'Shift or staff not found' })
+  dryRun(
+    @Param('shiftId', new ParseUUIDPipe()) shiftId: string,
+    @Query('staffId', new ParseUUIDPipe()) staffId: string,
+  ): Promise<DryRunResultDto> {
+    return this.assignmentsService.dryRun(shiftId, staffId);
+  }
+
   @Post()
   @Roles(UserRole.admin, UserRole.manager)
   @ApiOperation({
@@ -59,8 +76,7 @@ export class AssignmentsController {
   })
   @ApiCreatedResponse({ type: AssignmentDto })
   @ApiBadRequestResponse({
-    description:
-      'Constraint violation (not certified, missing skill, unavailable, double-booking, min-rest)',
+    description: 'Constraint violation (any blocking rule)',
   })
   @ApiConflictResponse({
     description: 'Already assigned, or DB rejected as overlapping',

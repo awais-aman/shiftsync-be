@@ -12,6 +12,7 @@ import { ShiftsModule } from '@/shifts/shifts.module';
 import { AvailabilityModule } from '@/availability/availability.module';
 import { ConstraintsModule } from '@/constraints/constraints.module';
 import { AssignmentsModule } from '@/assignments/assignments.module';
+import { OvertimeModule } from '@/overtime/overtime.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { AssignmentsModule } from '@/assignments/assignments.module';
     AvailabilityModule,
     ConstraintsModule,
     AssignmentsModule,
+    OvertimeModule,
   ],
   controllers: [AppController],
   providers: [AppService],

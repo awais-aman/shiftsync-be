@@ -27,13 +27,15 @@ model User {
   createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  certifications         StaffCertification[]
-  skills                 StaffSkill[]
-  managedLocations       ManagerLocation[]
-  recurringAvailability  AvailabilityRecurring[]
-  availabilityExceptions AvailabilityException[]
-  assignments            ShiftAssignment[]       @relation("AssignedStaff")
-  assignmentsCreated     ShiftAssignment[]       @relation("AssignedBy")
+  certifications           StaffCertification[]
+  skills                   StaffSkill[]
+  managedLocations         ManagerLocation[]
+  recurringAvailability    AvailabilityRecurring[]
+  availabilityExceptions   AvailabilityException[]
+  assignments              ShiftAssignment[]      @relation("AssignedStaff")
+  assignmentsCreated       ShiftAssignment[]      @relation("AssignedBy")
+  overtimeOverrides        OvertimeOverride[]     @relation("OverrideStaff")
+  overtimeOverridesGranted OvertimeOverride[]     @relation("OverrideApprover")
 
   @@map("users")
 }
@@ -175,4 +177,20 @@ model AvailabilityException {
 
   @@index([staffId, date])
   @@map("availability_exceptions")
+}
+
+model OvertimeOverride {
+  id            String   @id @default(uuid()) @db.Uuid
+  staffId       String   @map("staff_id") @db.Uuid
+  effectiveDate DateTime @map("effective_date") @db.Date
+  reason        String   @db.Text
+  approvedById  String   @map("approved_by") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  staff      User @relation("OverrideStaff", fields: [staffId], references: [id], onDelete: Cascade)
+  approvedBy User @relation("OverrideApprover", fields: [approvedById], references: [id], onDelete: Restrict)
+
+  @@unique([staffId, effectiveDate])
+  @@index([staffId])
+  @@map("overtime_overrides")
 }

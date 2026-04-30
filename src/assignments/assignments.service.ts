@@ -17,6 +17,7 @@ import {
 } from '@/database/repositories/assignment.repository';
 import { AssignmentDto } from '@/assignments/dto/assignment.dto';
 import { Provides } from '@/shared/constants';
+import type { ConstraintResult } from '@/types/assignment';
 
 @Injectable()
 export class AssignmentsService {
@@ -45,7 +46,14 @@ export class AssignmentsService {
         shiftId,
         staffId,
         assignedById,
-        async (data) => this.runEngine(data, shiftId, staffId),
+        async (data) => {
+          const result = this.runEngine(data, shiftId, staffId);
+          if (result.allowed) return { allowed: true };
+          return {
+            allowed: false,
+            reason: result.blocking.map((v) => v.message).join('; '),
+          };
+        },
       );
       const email = await this.fetchEmail(staffId);
       return this.toDto(created, email);
@@ -61,7 +69,6 @@ export class AssignmentsService {
           'This staff member is already assigned to this shift',
         );
       }
-      // Postgres exclusion_violation (23P01) wrapped by Prisma as raw error
       if (this.isExclusionViolation(error)) {
         throw new ConflictException(
           'Database rejected the assignment: staff is already booked for an overlapping shift',
@@ -74,6 +81,20 @@ export class AssignmentsService {
     }
   }
 
+  async dryRun(shiftId: string, staffId: string): Promise<ConstraintResult> {
+    const data = await this.assignmentRepository.loadEvaluationData(
+      shiftId,
+      staffId,
+    );
+    if (!data.shift) {
+      throw new NotFoundException(`Shift ${shiftId} not found`);
+    }
+    if (!data.staff) {
+      throw new NotFoundException(`Staff ${staffId} not found`);
+    }
+    return this.runEngine(data, shiftId, staffId);
+  }
+
   async delete(shiftId: string, staffId: string): Promise<void> {
     const existing = await this.assignmentRepository.findOne(shiftId, staffId);
     if (!existing) {
@@ -82,19 +103,39 @@ export class AssignmentsService {
     await this.assignmentRepository.delete(shiftId, staffId);
   }
 
-  private async runEngine(
+  private runEngine(
     data: EvaluationData,
     shiftId: string,
     staffId: string,
-  ): Promise<{ allowed: boolean; reason?: string }> {
+  ): ConstraintResult {
     if (!data.shift) {
-      return { allowed: false, reason: `Shift ${shiftId} not found` };
+      return {
+        allowed: false,
+        blocking: [
+          {
+            rule: 'not_certified',
+            severity: 'block',
+            message: `Shift ${shiftId} not found`,
+          },
+        ],
+        warnings: [],
+      };
     }
     if (!data.staff) {
-      return { allowed: false, reason: `Staff ${staffId} not found` };
+      return {
+        allowed: false,
+        blocking: [
+          {
+            rule: 'not_certified',
+            severity: 'block',
+            message: `Staff ${staffId} not found`,
+          },
+        ],
+        warnings: [],
+      };
     }
 
-    const result = this.constraintEngine.evaluate({
+    return this.constraintEngine.evaluate({
       staff: {
         id: data.staff.id,
         displayName: data.staff.displayName,
@@ -130,14 +171,12 @@ export class AssignmentsService {
         shiftId: a.shift.id,
         startAt: a.shift.startAt,
         endAt: a.shift.endAt,
+        locationTimezone: a.shift.location.timezone,
+      })),
+      overtimeOverrides: data.overrides.map((o) => ({
+        effectiveDate: o.effectiveDate.toISOString().slice(0, 10),
       })),
     });
-
-    if (result.allowed) return { allowed: true };
-    return {
-      allowed: false,
-      reason: result.blocking.map((v) => v.message).join('; '),
-    };
   }
 
   private isExclusionViolation(error: unknown): boolean {

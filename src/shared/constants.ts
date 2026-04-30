@@ -23,9 +23,17 @@ export enum RoutePaths {
   Team = 'team',
   Shifts = 'shifts',
   Availability = 'availability',
+  Overtime = 'overtime',
 }
 
 export const IsPublic = 'isPublic';
 
 export const PUBLISH_CUTOFF_HOURS = 48;
 export const MIN_REST_HOURS = 10;
+export const DAILY_OVERTIME_WARN_HOURS = 8;
+export const DAILY_OVERTIME_BLOCK_HOURS = 12;
+export const WEEKLY_OVERTIME_WARN_HOURS = 35;
+export const CONSECUTIVE_DAYS_WARN = 6;
+export const CONSECUTIVE_DAYS_BLOCK = 7;
+/** Min shift duration that counts toward "consecutive worked days". */
+export const COUNTED_SHIFT_MIN_HOURS = 1;

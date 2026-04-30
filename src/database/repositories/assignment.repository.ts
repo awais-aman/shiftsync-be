@@ -3,6 +3,7 @@ import type {
   AvailabilityException,
   AvailabilityRecurring,
   Location,
+  OvertimeOverride,
   Prisma,
   Shift,
   ShiftAssignment,
@@ -17,6 +18,12 @@ export type AssignmentWithStaff = ShiftAssignment & {
   staff: User;
 };
 
+export type StaffAssignmentForEval = ShiftAssignment & {
+  shift: Pick<Shift, 'id' | 'startAt' | 'endAt'> & {
+    location: Pick<Location, 'timezone'>;
+  };
+};
+
 export type EvaluationData = {
   shift: (Shift & { location: Location; requiredSkill: Skill }) | null;
   staff:
@@ -27,10 +34,10 @@ export type EvaluationData = {
         availabilityExceptions: AvailabilityException[];
       })
     | null;
-  /** All current assignments of this staff (across all shifts), with each shift's times. */
-  staffAssignments: Array<
-    ShiftAssignment & { shift: Pick<Shift, 'id' | 'startAt' | 'endAt'> }
-  >;
+  /** All current assignments of this staff. */
+  staffAssignments: StaffAssignmentForEval[];
+  /** Active overtime overrides for this staff. */
+  overrides: OvertimeOverride[];
 };
 
 @Injectable()
@@ -59,7 +66,7 @@ export class AssignmentRepository {
     shiftId: string,
     staffId: string,
   ): Promise<EvaluationData> {
-    const [shift, staff, staffAssignments] = await Promise.all([
+    const [shift, staff, staffAssignments, overrides] = await Promise.all([
       this.prisma.shift.findUnique({
         where: { id: shiftId },
         include: { location: true, requiredSkill: true },
@@ -76,11 +83,19 @@ export class AssignmentRepository {
       this.prisma.shiftAssignment.findMany({
         where: { staffId },
         include: {
-          shift: { select: { id: true, startAt: true, endAt: true } },
+          shift: {
+            select: {
+              id: true,
+              startAt: true,
+              endAt: true,
+              location: { select: { timezone: true } },
+            },
+          },
         },
       }),
+      this.prisma.overtimeOverride.findMany({ where: { staffId } }),
     ]);
-    return { shift, staff, staffAssignments };
+    return { shift, staff, staffAssignments, overrides };
   }
 
   /**
@@ -98,12 +113,11 @@ export class AssignmentRepository {
     ) => Promise<{ allowed: boolean; reason?: string }>,
   ): Promise<AssignmentWithStaff> {
     return this.prisma.$transaction(async (tx) => {
-      // Read-and-lock the staff's existing assignments to serialize concurrent attempts.
       await tx.$queryRaw`
         SELECT id FROM shift_assignments WHERE staff_id = ${staffId}::uuid FOR UPDATE
       `;
 
-      const [shift, staff, staffAssignments] = await Promise.all([
+      const [shift, staff, staffAssignments, overrides] = await Promise.all([
         tx.shift.findUnique({
           where: { id: shiftId },
           include: { location: true, requiredSkill: true },
@@ -120,15 +134,24 @@ export class AssignmentRepository {
         tx.shiftAssignment.findMany({
           where: { staffId },
           include: {
-            shift: { select: { id: true, startAt: true, endAt: true } },
+            shift: {
+              select: {
+                id: true,
+                startAt: true,
+                endAt: true,
+                location: { select: { timezone: true } },
+              },
+            },
           },
         }),
+        tx.overtimeOverride.findMany({ where: { staffId } }),
       ]);
 
       const result = await runEngineCheck({
         shift,
         staff,
         staffAssignments,
+        overrides,
       });
       if (!result.allowed) {
         throw new AssignmentRejectedError(result.reason ?? 'Constraint violation');
@@ -163,7 +186,6 @@ export class AssignmentRepository {
   isExclusionViolation(error: unknown): boolean {
     if (!(error instanceof Object)) return false;
     const e = error as { code?: string; meta?: { code?: string } };
-    // Postgres SQLSTATE 23P01 = exclusion_violation
     return e.code === '23P01' || e.meta?.code === '23P01';
   }
 }

@@ -13,15 +13,23 @@ export type ConstraintRule =
   | 'missing_skill'
   | 'unavailable'
   | 'double_booking'
-  | 'min_rest';
+  | 'min_rest'
+  | 'daily_overtime_warn'
+  | 'daily_overtime_block'
+  | 'weekly_overtime_warn'
+  | 'consecutive_6_warn'
+  | 'consecutive_7_block';
+
+export type ConstraintSeverity = 'block' | 'warn';
 
 export type ConstraintViolation = {
   rule: ConstraintRule;
-  severity: 'block';
+  severity: ConstraintSeverity;
   message: string;
 };
 
 export type ConstraintResult = {
   allowed: boolean;
   blocking: ConstraintViolation[];
+  warnings: ConstraintViolation[];
 };
