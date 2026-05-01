@@ -116,6 +116,7 @@ Key endpoint groups:
 3. **Consecutive-days counting** — any shift `>= 1h` counts as a worked day. Overnight shifts count for the start day only.
 4. **Edit after swap approval** — once approved, the swap is final; subsequent shift edits notify assignees but don't revert. Edit while a swap is in-flight auto-cancels the swap.
 5. **Location spanning timezone boundary** — out of scope; one IANA tz per location.
+6. **Cross-timezone staff (the "Timezone Tangle" scenario)** — each availability row carries its own timezone. When evaluating a shift, the engine only considers availability rows whose timezone matches the shift's location timezone. A staff member working both PT and ET locations therefore needs two availability rows (e.g. 09:00–17:00 in `America/New_York` *and* 09:00–17:00 in `America/Los_Angeles`). This keeps "9am–5pm" unambiguous: it always means 9am–5pm in *that* timezone, never an arbitrary translation between them.
 
 ## Time, DST & overnight handling
 
