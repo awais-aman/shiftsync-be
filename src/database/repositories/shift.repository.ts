@@ -16,6 +16,10 @@ export type ListShiftsFilters = {
   locationId?: string;
   from?: Date;
   to?: Date;
+  /** Hard scope; if set, results are restricted to these locations. */
+  locationIdsAllowed?: string[];
+  /** If true, only published shifts are returned. */
+  publishedOnly?: boolean;
 };
 
 @Injectable()
@@ -24,11 +28,27 @@ export class ShiftRepository {
 
   list(filters: ListShiftsFilters = {}): Promise<ShiftWithRelations[]> {
     const where: Prisma.ShiftWhereInput = {};
-    if (filters.locationId) where.locationId = filters.locationId;
+    if (filters.locationId && filters.locationIdsAllowed) {
+      // Intersect: explicit filter must be in the allowed set, else empty.
+      if (!filters.locationIdsAllowed.includes(filters.locationId)) {
+        return Promise.resolve([]);
+      }
+      where.locationId = filters.locationId;
+    } else if (filters.locationId) {
+      where.locationId = filters.locationId;
+    } else if (filters.locationIdsAllowed) {
+      if (filters.locationIdsAllowed.length === 0) {
+        return Promise.resolve([]);
+      }
+      where.locationId = { in: filters.locationIdsAllowed };
+    }
     if (filters.from || filters.to) {
       where.startAt = {};
       if (filters.from) where.startAt.gte = filters.from;
       if (filters.to) where.startAt.lt = filters.to;
+    }
+    if (filters.publishedOnly) {
+      where.status = 'published';
     }
     return this.prisma.shift.findMany({
       where,

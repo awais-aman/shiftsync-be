@@ -46,12 +46,13 @@ export class AssignmentsController {
   constructor(private readonly assignmentsService: AssignmentsService) {}
 
   @Get()
-  @ApiOperation({ summary: 'List assignments for a shift' })
+  @ApiOperation({ summary: 'List assignments for a shift (scoped by role)' })
   @ApiOkResponse({ type: AssignmentDto, isArray: true })
   list(
     @Param('shiftId', new ParseUUIDPipe()) shiftId: string,
+    @CurrentUser() user: AuthenticatedUser,
   ): Promise<AssignmentDto[]> {
-    return this.assignmentsService.listForShift(shiftId);
+    return this.assignmentsService.listForShift(shiftId, user.id);
   }
 
   @Get('dry-run')
@@ -65,8 +66,9 @@ export class AssignmentsController {
   dryRun(
     @Param('shiftId', new ParseUUIDPipe()) shiftId: string,
     @Query('staffId', new ParseUUIDPipe()) staffId: string,
+    @CurrentUser() user: AuthenticatedUser,
   ): Promise<DryRunResultDto> {
-    return this.assignmentsService.dryRun(shiftId, staffId);
+    return this.assignmentsService.dryRunForActor(shiftId, staffId, user.id);
   }
 
   @Get('suggestions')
@@ -90,13 +92,18 @@ export class AssignmentsController {
   })
   suggestions(
     @Param('shiftId', new ParseUUIDPipe()) shiftId: string,
+    @CurrentUser() user: AuthenticatedUser,
     @Query('limit') limit?: string,
   ): Promise<
     Array<{ staffId: string; displayName: string | null; weeklyHours: number }>
   > {
     const parsed = limit ? Number(limit) : SUGGESTION_TOP_N;
     const cap = Number.isFinite(parsed) && parsed > 0 ? parsed : SUGGESTION_TOP_N;
-    return this.assignmentsService.suggest(shiftId, Math.min(cap, 20));
+    return this.assignmentsService.suggestForActor(
+      shiftId,
+      Math.min(cap, 20),
+      user.id,
+    );
   }
 
   @Post()

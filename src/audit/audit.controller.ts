@@ -15,10 +15,12 @@ import {
 } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import type { Response } from 'express';
+import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { Roles } from '@/common/decorators/roles.decorator';
 import { RolesGuard } from '@/common/guards/roles.guard';
 import { SupabaseJwtGuard } from '@/common/guards/supabase-jwt.guard';
 import { RoutePaths } from '@/shared/constants';
+import type { AuthenticatedUser } from '@/types/auth';
 import { AuditEntryDto } from '@/audit/dto/audit-entry.dto';
 import { ListAuditDto } from '@/audit/dto/list-audit.dto';
 import { AuditService } from '@/audit/audit.service';
@@ -36,19 +38,25 @@ export class AuditController {
   @Roles(UserRole.admin, UserRole.manager)
   @ApiOperation({
     summary:
-      'List audit entries; admin or manager. Filterable by entity, actor, location, and date range.',
+      'List audit entries; admin sees all, manager scoped to their managed locations.',
   })
   @ApiOkResponse({ type: AuditEntryDto, isArray: true })
-  list(@Query() query: ListAuditDto): Promise<AuditEntryDto[]> {
-    return this.auditService.list({
-      entityType: query.entityType,
-      entityId: query.entityId,
-      action: query.action,
-      actorId: query.actorId,
-      locationId: query.locationId,
-      from: query.from,
-      to: query.to,
-    });
+  list(
+    @Query() query: ListAuditDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<AuditEntryDto[]> {
+    return this.auditService.listForActor(
+      {
+        entityType: query.entityType,
+        entityId: query.entityId,
+        action: query.action,
+        actorId: query.actorId,
+        locationId: query.locationId,
+        from: query.from,
+        to: query.to,
+      },
+      user.id,
+    );
   }
 
   @Get('export.csv')
@@ -58,19 +66,22 @@ export class AuditController {
   })
   async export(
     @Query() query: ListAuditDto,
+    @CurrentUser() user: AuthenticatedUser,
     @Res() res: Response,
   ): Promise<void> {
-    const rows = await this.auditService.listRaw({
-      entityType: query.entityType,
-      entityId: query.entityId,
-      action: query.action,
-      actorId: query.actorId,
-      locationId: query.locationId,
-      from: query.from,
-      to: query.to,
-      // Cap export size; tighten if it ever becomes a concern.
-      limit: 10_000,
-    });
+    const rows = await this.auditService.listRawForActor(
+      {
+        entityType: query.entityType,
+        entityId: query.entityId,
+        action: query.action,
+        actorId: query.actorId,
+        locationId: query.locationId,
+        from: query.from,
+        to: query.to,
+        limit: 10_000,
+      },
+      user.id,
+    );
     const csv = this.auditService.toCsv(rows);
     res.header('Content-Type', 'text/csv; charset=utf-8');
     res.header(

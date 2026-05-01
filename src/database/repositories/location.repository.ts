@@ -6,8 +6,16 @@ import { PrismaService } from '@/database/prisma.service';
 export class LocationRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  list(): Promise<Location[]> {
-    return this.prisma.location.findMany({ orderBy: { name: 'asc' } });
+  list(filters: { idsAllowed?: string[] } = {}): Promise<Location[]> {
+    const where: Prisma.LocationWhereInput = {};
+    if (filters.idsAllowed) {
+      if (filters.idsAllowed.length === 0) return Promise.resolve([]);
+      where.id = { in: filters.idsAllowed };
+    }
+    return this.prisma.location.findMany({
+      where,
+      orderBy: { name: 'asc' },
+    });
   }
 
   findById(id: string): Promise<Location | null> {

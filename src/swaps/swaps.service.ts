@@ -15,6 +15,7 @@ import {
   type SwapWithRelations,
 } from '@/database/repositories/swap.repository';
 import { AuditService } from '@/audit/audit.service';
+import { LocationScopeService } from '@/common/scope/location-scope.service';
 import { NotificationsService } from '@/notifications/notifications.service';
 import { CreateSwapRequestDto } from '@/swaps/dto/create-swap.dto';
 import { SwapRequestDto } from '@/swaps/dto/swap.dto';
@@ -41,6 +42,7 @@ export class SwapsService {
     private readonly constraintEngine: ConstraintEngine,
     private readonly notificationsService: NotificationsService,
     private readonly auditService: AuditService,
+    private readonly scopeService: LocationScopeService,
   ) {}
 
   async create(
@@ -136,6 +138,7 @@ export class SwapsService {
         requesterId: staffId,
         targetStaffId: dto.targetStaffId,
       },
+      locationId: requestingAssignment.shift.locationId,
     });
     return this.toDto((await this.swapRepository.findById(created.id))!);
   }
@@ -148,13 +151,26 @@ export class SwapsService {
     incoming: SwapRequestDto[];
     awaitingApproval: SwapRequestDto[];
   }> {
-    const [outgoing, incoming, awaitingApproval] = await Promise.all([
+    const [outgoing, incoming, awaitingAll, ctx] = await Promise.all([
       this.swapRepository.listOutgoing(staffId),
       this.swapRepository.listIncoming(staffId),
       role === UserRole.admin || role === UserRole.manager
         ? this.swapRepository.listAwaitingApproval()
         : Promise.resolve([] as SwapWithRelations[]),
+      role === UserRole.manager
+        ? this.scopeService.contextFor(staffId)
+        : Promise.resolve(null),
     ]);
+
+    // Managers only see swaps for shifts at their managed locations.
+    const awaitingApproval =
+      ctx && ctx.managedLocationIds
+        ? awaitingAll.filter((row) =>
+            ctx.managedLocationIds!.includes(
+              row.requestingAssignment.shift.locationId,
+            ),
+          )
+        : awaitingAll;
 
     return {
       outgoing: outgoing.map((row) => this.toDto(row)),
@@ -194,6 +210,7 @@ export class SwapsService {
       action: 'swap_cancel',
       before: { status: swap.status },
       after: { status: SwapStatus.cancelled },
+      locationId: swap.requestingAssignment.shift.locationId,
     });
     return this.toDto({ ...swap, ...updated });
   }
@@ -231,6 +248,7 @@ export class SwapsService {
       action: 'swap_accept',
       before: { status: swap.status },
       after: { status: SwapStatus.accepted_by_peer },
+      locationId: swap.requestingAssignment.shift.locationId,
     });
     return this.toDto({ ...swap, ...updated });
   }
@@ -250,6 +268,10 @@ export class SwapsService {
       });
       if (!swap) throw new NotFoundException(`Swap ${id} not found`);
       this.assertNotFinal(swap.status);
+      await this.scopeService.assertCanManageLocation(
+        decidedById,
+        swap.requestingAssignment.shift.locationId,
+      );
 
       if (swap.type === SwapType.drop) {
         if (swap.status !== SwapStatus.pending) {
@@ -390,6 +412,7 @@ export class SwapsService {
         action: 'swap_approve',
         before: { status: swap.status },
         after: { status: SwapStatus.approved },
+        locationId: swap.requestingAssignment.shift.locationId,
       });
 
       return this.toDto(refreshed);
@@ -402,6 +425,10 @@ export class SwapsService {
     reason?: string,
   ): Promise<SwapRequestDto> {
     const swap = await this.requireActive(id);
+    await this.scopeService.assertCanManageLocation(
+      decidedById,
+      swap.requestingAssignment.shift.locationId,
+    );
     const updated = await this.swapRepository.updateStatus(id, {
       status: SwapStatus.rejected,
       decidedById,
@@ -426,6 +453,7 @@ export class SwapsService {
       action: 'swap_reject',
       before: { status: swap.status },
       after: { status: SwapStatus.rejected, reason },
+      locationId: swap.requestingAssignment.shift.locationId,
     });
     return this.toDto({ ...swap, ...updated });
   }

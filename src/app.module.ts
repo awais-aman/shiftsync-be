@@ -16,6 +16,7 @@ import { OvertimeModule } from '@/overtime/overtime.module';
 import { SwapsModule } from '@/swaps/swaps.module';
 import { NotificationsModule } from '@/notifications/notifications.module';
 import { AuditModule } from '@/audit/audit.module';
+import { ScopeModule } from '@/common/scope/scope.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { AuditModule } from '@/audit/audit.module';
     }),
     SupabaseModule,
     DatabaseModule,
+    ScopeModule,
     AuthModule,
     LocationsModule,
     SkillsModule,

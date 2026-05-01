@@ -50,25 +50,33 @@ export class ShiftsController {
 
   @Get()
   @ApiOperation({
-    summary: 'List shifts (any auth user); filter by locationId and date range',
+    summary:
+      'List shifts; results scoped by role (admin = all, manager = managed locations, staff = published shifts at certified locations)',
   })
   @ApiOkResponse({ type: ShiftDto, isArray: true })
-  list(@Query() query: ListShiftsDto): Promise<ShiftDto[]> {
-    return this.shiftsService.list({
-      locationId: query.locationId,
-      from: query.from,
-      to: query.to,
-    });
+  list(
+    @Query() query: ListShiftsDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<ShiftDto[]> {
+    return this.shiftsService.list(
+      {
+        locationId: query.locationId,
+        from: query.from,
+        to: query.to,
+      },
+      user.id,
+    );
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Get a shift by id' })
+  @ApiOperation({ summary: 'Get a shift by id (scoped by role)' })
   @ApiOkResponse({ type: ShiftDto })
   @ApiNotFoundResponse({ description: 'Shift not found' })
   findById(
     @Param('id', new ParseUUIDPipe()) id: string,
+    @CurrentUser() user: AuthenticatedUser,
   ): Promise<ShiftDto> {
-    return this.shiftsService.findById(id);
+    return this.shiftsService.findById(id, user.id);
   }
 
   @Post()

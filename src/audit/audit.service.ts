@@ -1,10 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { UserRole } from '@prisma/client';
 import type { AuditAction, AuditEntityType, AuditLog } from '@prisma/client';
 import {
   AuditRepository,
   type ListAuditFilters,
 } from '@/database/repositories/audit.repository';
 import { AuditEntryDto } from '@/audit/dto/audit-entry.dto';
+import { LocationScopeService } from '@/common/scope/location-scope.service';
 
 export type RecordAuditInput = {
   actorId?: string;
@@ -20,7 +22,10 @@ export type RecordAuditInput = {
 export class AuditService {
   private readonly logger = new Logger(AuditService.name);
 
-  constructor(private readonly auditRepository: AuditRepository) {}
+  constructor(
+    private readonly auditRepository: AuditRepository,
+    private readonly scopeService: LocationScopeService,
+  ) {}
 
   /** Fire-and-forget; never throws. Audit failures are logged but don't break callers. */
   async record(input: RecordAuditInput): Promise<void> {
@@ -48,8 +53,34 @@ export class AuditService {
     return rows.map((row) => this.toDto(row));
   }
 
+  /** Apply manager-location scope on top of the requested filters. */
+  async listForActor(
+    filters: ListAuditFilters,
+    actorId: string,
+  ): Promise<AuditEntryDto[]> {
+    const scoped = await this.applyScope(filters, actorId);
+    return this.list(scoped);
+  }
+
+  async listRawForActor(
+    filters: ListAuditFilters,
+    actorId: string,
+  ): Promise<AuditLog[]> {
+    const scoped = await this.applyScope(filters, actorId);
+    return this.auditRepository.list(scoped);
+  }
+
   async listRaw(filters: ListAuditFilters): Promise<AuditLog[]> {
     return this.auditRepository.list(filters);
+  }
+
+  private async applyScope(
+    filters: ListAuditFilters,
+    actorId: string,
+  ): Promise<ListAuditFilters> {
+    const ctx = await this.scopeService.contextFor(actorId);
+    if (ctx.role === UserRole.admin) return filters;
+    return { ...filters, locationIdsAllowed: ctx.managedLocationIds ?? [] };
   }
 
   private toDto(row: AuditLog): AuditEntryDto {

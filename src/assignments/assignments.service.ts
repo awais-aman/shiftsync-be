@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   Logger,
@@ -17,6 +18,7 @@ import {
 } from '@/database/repositories/assignment.repository';
 import { AssignmentDto } from '@/assignments/dto/assignment.dto';
 import { AuditService } from '@/audit/audit.service';
+import { LocationScopeService } from '@/common/scope/location-scope.service';
 import { NotificationsService } from '@/notifications/notifications.service';
 import { PrismaService } from '@/database/prisma.service';
 import { Provides } from '@/shared/constants';
@@ -32,14 +34,55 @@ export class AssignmentsService {
     private readonly constraintEngine: ConstraintEngine,
     private readonly notificationsService: NotificationsService,
     private readonly auditService: AuditService,
+    private readonly scopeService: LocationScopeService,
     private readonly prisma: PrismaService,
   ) {}
 
-  async listForShift(shiftId: string): Promise<AssignmentDto[]> {
+  async listForShift(
+    shiftId: string,
+    actorId: string,
+  ): Promise<AssignmentDto[]> {
+    await this.assertCanReadShift(shiftId, actorId);
     const rows = await this.assignmentRepository.listForShift(shiftId);
     if (rows.length === 0) return [];
     const emailById = await this.fetchEmailMap();
     return rows.map((row) => this.toDto(row, emailById.get(row.staffId)));
+  }
+
+  /** Read-side scope check: admin sees all, manager sees managed-location shifts,
+   *  staff sees published shifts they're certified at OR shifts they're assigned to. */
+  private async assertCanReadShift(
+    shiftId: string,
+    actorId: string,
+  ): Promise<void> {
+    const shift = await this.prisma.shift.findUnique({
+      where: { id: shiftId },
+      select: { locationId: true, status: true },
+    });
+    if (!shift) throw new NotFoundException(`Shift ${shiftId} not found`);
+
+    const ctx = await this.scopeService.contextFor(actorId);
+    if (ctx.role === 'admin') return;
+    if (ctx.role === 'manager') {
+      if (!ctx.managedLocationIds?.includes(shift.locationId)) {
+        throw new ForbiddenException('You do not manage this location');
+      }
+      return;
+    }
+    // Staff: published shift at certified location, OR assigned to it.
+    if (
+      shift.status === 'published' &&
+      ctx.certifiedLocationIds.includes(shift.locationId)
+    ) {
+      return;
+    }
+    const own = await this.prisma.shiftAssignment.findFirst({
+      where: { shiftId, staffId: actorId },
+      select: { id: true },
+    });
+    if (!own) {
+      throw new ForbiddenException('Shift not visible to you');
+    }
   }
 
   async create(
@@ -47,6 +90,7 @@ export class AssignmentsService {
     staffId: string,
     assignedById: string,
   ): Promise<AssignmentDto> {
+    await this.assertCallerOwnsShift(shiftId, assignedById);
     try {
       const created = await this.assignmentRepository.createTransactional(
         shiftId,
@@ -70,12 +114,17 @@ export class AssignmentsService {
         payload: { shiftId, assignmentId: created.id },
         email: true,
       });
+      const shiftRow = await this.prisma.shift.findUnique({
+        where: { id: shiftId },
+        select: { locationId: true },
+      });
       void this.auditService.record({
         actorId: assignedById,
         entityType: 'shift_assignment',
         entityId: created.id,
         action: 'assign',
         after: { shiftId, staffId, assignmentId: created.id },
+        locationId: shiftRow?.locationId,
       });
       return this.toDto(created, email);
     } catch (error) {
@@ -179,6 +228,39 @@ export class AssignmentsService {
     return hours;
   }
 
+  /** Manager-or-admin check: caller must manage the shift's location. */
+  private async assertCallerOwnsShift(
+    shiftId: string,
+    actorId: string,
+  ): Promise<void> {
+    const shift = await this.prisma.shift.findUnique({
+      where: { id: shiftId },
+      select: { locationId: true },
+    });
+    if (!shift) throw new NotFoundException(`Shift ${shiftId} not found`);
+    await this.scopeService.assertCanManageLocation(actorId, shift.locationId);
+  }
+
+  async dryRunForActor(
+    shiftId: string,
+    staffId: string,
+    actorId: string,
+  ): Promise<ConstraintResult> {
+    await this.assertCallerOwnsShift(shiftId, actorId);
+    return this.dryRun(shiftId, staffId);
+  }
+
+  async suggestForActor(
+    shiftId: string,
+    limit: number,
+    actorId: string,
+  ): Promise<
+    Array<{ staffId: string; displayName: string | null; weeklyHours: number }>
+  > {
+    await this.assertCallerOwnsShift(shiftId, actorId);
+    return this.suggest(shiftId, limit);
+  }
+
   async dryRun(shiftId: string, staffId: string): Promise<ConstraintResult> {
     const data = await this.assignmentRepository.loadEvaluationData(
       shiftId,
@@ -198,6 +280,7 @@ export class AssignmentsService {
     staffId: string,
     actorId: string,
   ): Promise<void> {
+    await this.assertCallerOwnsShift(shiftId, actorId);
     const existing = await this.assignmentRepository.findOne(shiftId, staffId);
     if (!existing) {
       throw new NotFoundException('Assignment not found');
@@ -210,12 +293,17 @@ export class AssignmentsService {
       payload: { shiftId },
       email: true,
     });
+    const shiftRow = await this.prisma.shift.findUnique({
+      where: { id: shiftId },
+      select: { locationId: true },
+    });
     void this.auditService.record({
       actorId,
       entityType: 'shift_assignment',
       entityId: existing.id,
       action: 'unassign',
       before: { shiftId, staffId, assignmentId: existing.id },
+      locationId: shiftRow?.locationId,
     });
   }
 

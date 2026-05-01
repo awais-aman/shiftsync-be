@@ -1,11 +1,12 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { ShiftStatus } from '@prisma/client';
+import { ShiftStatus, UserRole } from '@prisma/client';
 import { toZonedTime } from 'date-fns-tz';
 import {
   type ListShiftsFilters,
@@ -17,6 +18,7 @@ import { SkillRepository } from '@/database/repositories/skill.repository';
 import { SwapRepository } from '@/database/repositories/swap.repository';
 import { AuditService } from '@/audit/audit.service';
 import { LocationDto } from '@/locations/dto/location.dto';
+import { LocationScopeService } from '@/common/scope/location-scope.service';
 import { NotificationsService } from '@/notifications/notifications.service';
 import { PrismaService } from '@/database/prisma.service';
 import { SkillDto } from '@/skills/dto/skill.dto';
@@ -36,24 +38,61 @@ export class ShiftsService {
     private readonly swapRepository: SwapRepository,
     private readonly notificationsService: NotificationsService,
     private readonly auditService: AuditService,
+    private readonly scopeService: LocationScopeService,
     private readonly prisma: PrismaService,
   ) {}
 
-  async list(filters: ListShiftsFilters): Promise<ShiftDto[]> {
-    const rows = await this.shiftRepository.list(filters);
+  async list(
+    filters: ListShiftsFilters,
+    actorId: string,
+  ): Promise<ShiftDto[]> {
+    const ctx = await this.scopeService.contextFor(actorId);
+    const scoped: ListShiftsFilters = { ...filters };
+    if (ctx.role === UserRole.manager) {
+      scoped.locationIdsAllowed = ctx.managedLocationIds ?? [];
+    } else if (ctx.role === UserRole.staff) {
+      scoped.locationIdsAllowed = ctx.certifiedLocationIds;
+      scoped.publishedOnly = true;
+    }
+    const rows = await this.shiftRepository.list(scoped);
     return rows.map((row) => this.toDto(row));
   }
 
-  async findById(id: string): Promise<ShiftDto> {
+  async findById(id: string, actorId: string): Promise<ShiftDto> {
     const shift = await this.shiftRepository.findById(id);
     if (!shift) throw new NotFoundException(`Shift ${id} not found`);
+    await this.assertCanRead(shift, actorId);
     return this.toDto(shift);
+  }
+
+  /** Throws ForbiddenException if the actor isn't allowed to see this shift. */
+  private async assertCanRead(
+    shift: ShiftWithRelations,
+    actorId: string,
+  ): Promise<void> {
+    const ctx = await this.scopeService.contextFor(actorId);
+    if (ctx.role === UserRole.admin) return;
+    if (ctx.role === UserRole.manager) {
+      if (!ctx.managedLocationIds?.includes(shift.locationId)) {
+        throw new ForbiddenException('You do not manage this location');
+      }
+      return;
+    }
+    // Staff: published shifts at locations they're certified at.
+    if (
+      shift.status !== ShiftStatus.published ||
+      !ctx.certifiedLocationIds.includes(shift.locationId)
+    ) {
+      throw new ForbiddenException('Shift not visible to you');
+    }
   }
 
   async create(dto: CreateShiftDto, actorId: string): Promise<ShiftDto> {
     if (dto.endAt <= dto.startAt) {
       throw new BadRequestException('endAt must be after startAt');
     }
+
+    await this.scopeService.assertCanManageLocation(actorId, dto.locationId);
 
     const location = await this.locationRepository.findById(dto.locationId);
     if (!location) {
@@ -93,6 +132,12 @@ export class ShiftsService {
   ): Promise<ShiftDto> {
     const existing = await this.shiftRepository.findById(id);
     if (!existing) throw new NotFoundException(`Shift ${id} not found`);
+    await this.scopeService.assertCanManageLocation(actorId, existing.locationId);
+    if (dto.locationId && dto.locationId !== existing.locationId) {
+      // Moving a shift to a different location requires authority over the
+      // destination too.
+      await this.scopeService.assertCanManageLocation(actorId, dto.locationId);
+    }
     const before = this.snapshot(existing);
 
     const startAt = dto.startAt ?? existing.startAt;
@@ -175,6 +220,7 @@ export class ShiftsService {
   async delete(id: string, actorId: string): Promise<void> {
     const existing = await this.shiftRepository.findById(id);
     if (!existing) throw new NotFoundException(`Shift ${id} not found`);
+    await this.scopeService.assertCanManageLocation(actorId, existing.locationId);
     await this.shiftRepository.delete(id);
     void this.auditService.record({
       actorId,
@@ -193,6 +239,7 @@ export class ShiftsService {
   ): Promise<ShiftDto> {
     const existing = await this.shiftRepository.findById(id);
     if (!existing) throw new NotFoundException(`Shift ${id} not found`);
+    await this.scopeService.assertCanManageLocation(actorId, existing.locationId);
     this.assertWithinCutoff(existing.startAt, 'publish');
     if (existing.status === ShiftStatus.published) {
       throw new BadRequestException('Shift is already published');
@@ -236,6 +283,7 @@ export class ShiftsService {
   ): Promise<ShiftDto> {
     const existing = await this.shiftRepository.findById(id);
     if (!existing) throw new NotFoundException(`Shift ${id} not found`);
+    await this.scopeService.assertCanManageLocation(actorId, existing.locationId);
     this.assertWithinCutoff(existing.startAt, 'unpublish');
     if (existing.status !== ShiftStatus.published) {
       throw new BadRequestException('Shift is not published');

@@ -23,6 +23,7 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
+import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { Roles } from '@/common/decorators/roles.decorator';
 import { SupabaseJwtGuard } from '@/common/guards/supabase-jwt.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
@@ -31,6 +32,7 @@ import { LocationDto } from '@/locations/dto/location.dto';
 import { UpdateLocationDto } from '@/locations/dto/update-location.dto';
 import { LocationsService } from '@/locations/locations.service';
 import { RoutePaths } from '@/shared/constants';
+import type { AuthenticatedUser } from '@/types/auth';
 
 @ApiTags('Locations')
 @ApiBearerAuth()
@@ -42,10 +44,13 @@ export class LocationsController {
   constructor(private readonly locationsService: LocationsService) {}
 
   @Get()
-  @ApiOperation({ summary: 'List all locations' })
+  @ApiOperation({
+    summary:
+      'List locations; admin sees all, manager sees managed locations, staff sees certified locations',
+  })
   @ApiOkResponse({ type: LocationDto, isArray: true })
-  list(): Promise<LocationDto[]> {
-    return this.locationsService.list();
+  list(@CurrentUser() user: AuthenticatedUser): Promise<LocationDto[]> {
+    return this.locationsService.list(user.id);
   }
 
   @Get(':id')

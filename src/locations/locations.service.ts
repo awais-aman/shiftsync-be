@@ -1,16 +1,28 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { UserRole } from '@prisma/client';
 import type { Location } from '@prisma/client';
 import { LocationRepository } from '@/database/repositories/location.repository';
+import { LocationScopeService } from '@/common/scope/location-scope.service';
 import { CreateLocationDto } from '@/locations/dto/create-location.dto';
 import { LocationDto } from '@/locations/dto/location.dto';
 import { UpdateLocationDto } from '@/locations/dto/update-location.dto';
 
 @Injectable()
 export class LocationsService {
-  constructor(private readonly locationRepository: LocationRepository) {}
+  constructor(
+    private readonly locationRepository: LocationRepository,
+    private readonly scopeService: LocationScopeService,
+  ) {}
 
-  async list(): Promise<LocationDto[]> {
-    const rows = await this.locationRepository.list();
+  async list(actorId: string): Promise<LocationDto[]> {
+    const ctx = await this.scopeService.contextFor(actorId);
+    const idsAllowed =
+      ctx.role === UserRole.admin
+        ? undefined
+        : ctx.role === UserRole.manager
+          ? (ctx.managedLocationIds ?? [])
+          : ctx.certifiedLocationIds;
+    const rows = await this.locationRepository.list({ idsAllowed });
     return rows.map(this.toDto);
   }
 
