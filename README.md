@@ -61,6 +61,10 @@ CORS_ORIGIN=http://localhost:3000  # comma-separated list for production
 
 ## Deployment (Railway)
 
+This service is deployed at **https://shiftsync-be-production.up.railway.app** (Swagger: `/api/docs`).
+
+To deploy a fresh copy:
+
 1. New project → Deploy from GitHub repo
 2. **Variables**: paste every var from `.env` (Railway will inject its own `PORT`, no need to set it)
 3. **Settings → Networking → Generate Domain** — note the URL
