@@ -16,6 +16,7 @@ import { OvertimeModule } from '@/overtime/overtime.module';
 import { SwapsModule } from '@/swaps/swaps.module';
 import { NotificationsModule } from '@/notifications/notifications.module';
 import { AuditModule } from '@/audit/audit.module';
+import { OnDutyModule } from '@/on-duty/on-duty.module';
 import { ScopeModule } from '@/common/scope/scope.module';
 
 @Module({
@@ -39,6 +40,7 @@ import { ScopeModule } from '@/common/scope/scope.module';
     SwapsModule,
     NotificationsModule,
     AuditModule,
+    OnDutyModule,
   ],
   controllers: [AppController],
   providers: [AppService],
