@@ -66,6 +66,18 @@ export class SwapsController {
     return this.swapsService.listForUser(user.id, role);
   }
 
+  @Get('open')
+  @ApiOperation({
+    summary:
+      'List open drop requests the staff member is qualified to claim (skill + cert match)',
+  })
+  @ApiOkResponse({ type: SwapRequestDto, isArray: true })
+  listOpen(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<SwapRequestDto[]> {
+    return this.swapsService.listOpenForStaff(user.id);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get a single swap request' })
   @ApiOkResponse({ type: SwapRequestDto })
@@ -114,6 +126,23 @@ export class SwapsController {
     @Param('id', new ParseUUIDPipe()) id: string,
   ): Promise<SwapRequestDto> {
     return this.swapsService.accept(id, user.id);
+  }
+
+  @Post(':id/claim')
+  @ApiOperation({
+    summary:
+      'Staff claims an open drop request (constraint engine must clear them); manager approval still required',
+  })
+  @ApiOkResponse({ type: SwapRequestDto })
+  @ApiBadRequestResponse({
+    description: 'Not a pending drop, or constraint engine rejected the claimer',
+  })
+  @ApiConflictResponse({ description: 'Already claimed by someone else' })
+  claim(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ): Promise<SwapRequestDto> {
+    return this.swapsService.claim(id, user.id);
   }
 
   @Post(':id/approve')
