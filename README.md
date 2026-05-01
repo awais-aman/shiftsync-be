@@ -53,12 +53,12 @@ These are the decisions baked into the implementation:
 ## Time, DST & overnight handling
 
 - All persisted times are `timestamptz`. Display always uses the **shift's location timezone** via `date-fns-tz`.
-- Recurring availability windows store a `timezone` per row; the engine interprets each window in that tz. DST transitions are handled because we convert the shift's UTC instant to local wall-clock using `toZonedTime` before comparing minute-of-day. Same wall-clock minutes match before and after a DST jump.
-- **Overnight shifts** (e.g. 23:00–03:00) are split at midnight by the engine and each half is checked against the availability for its own weekday. Recurring availability windows themselves cannot cross midnight (CHECK `end_time > start_time`); to cover an overnight shift a staff member needs two windows (e.g. 22:00–24:00 on the start day and 00:00–03:00 on the end day).
+- Recurring availability windows store a `timezone` per row; the engine interprets each window in that tz. DST transitions are handled because we convert the shift's UTC instant to local wall-clock using `toZonedTime` before comparing minute-of-day, so the same wall-clock window matches before and after a DST jump.
+- **Overnight shifts** (e.g. 23:00–03:00) are split at midnight by the engine and each half is checked against the availability for its own weekday. To cover an overnight shift, a staff member needs two recurring windows (e.g. 22:00–24:00 on the start day and 00:00–03:00 on the end day).
 
-## Known limitations / deferred
+## How notifications & realtime work
 
-- Realtime is implemented for `notifications` only; other tables refresh via the notification side-channel (TanStack invalidations) rather than direct subscriptions.
-- Email "delivery" is a Pino log line + `email_simulated=true` flag on the notification row. Per-user channel preference is honoured (`in_app` vs `in_app_email`).
-- Seed wipes `shifts`, `shift_assignments`, `swap_requests`, `overtime_overrides`, `notifications`, and `audit_log` on every run — locations/skills/users are upserted.
-- Concurrent assignment conflicts surface to the loser of the race via 409 (DB EXCLUDE GIST). The winner's update is propagated to the loser through the notification side-channel rather than a direct conflict toast.
+- Every meaningful event writes a row to `notifications`. The Supabase Realtime channel on that table (filtered by `user_id` via RLS) pushes inserts to the recipient's browser instantly.
+- A notification arriving in the FE invalidates the relevant TanStack Query keys (swaps, shifts, assignments), so any open page refetches its data on the spot. From the user's point of view, schedules update without a refresh and swap state changes appear in real time.
+- Each user picks `in_app` or `in_app_email` on their dashboard. When email is on, an `email_simulated=true` flag is set on the notification row and a `[email-sim]` line is logged on the BE.
+- Concurrent-assignment conflicts: the DB-level `EXCLUDE GIST` constraint guarantees only one of two racing managers wins. The loser receives a 409 immediately and the FE surfaces the message as a toast.
