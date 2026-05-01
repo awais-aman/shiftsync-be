@@ -44,15 +44,21 @@ OpenAPI is exposed at `GET /api/docs-json` (used by the FE's `npm run gen:types`
 
 These are the decisions baked into the implementation:
 
-1. **De-certified staff & history** — past assignments are preserved untouched. We don't currently auto-clean future unpublished assignments at the de-certified location (manager-scoping work would handle this; deferred).
-2. **Desired hours vs availability** — availability is a hard constraint enforced by the engine; `desired_hours_per_week` is currently advisory and surfaces in fairness ranking only.
-3. **Consecutive-days counting** — any shift `>= 1h` counts as a worked day. Shifts crossing midnight count for the start day only.
+1. **De-certified staff & history** — past assignments are preserved untouched. Future unpublished assignments at the de-certified location are not auto-cleaned, but the constraint engine will reject any new assignment.
+2. **Desired hours vs availability** — availability is a hard constraint enforced by the engine; `desired_hours_per_week` is advisory and surfaces in fairness analytics (variance vs actual) and the suggestions ranker (lowest-hours staff first).
+3. **Consecutive-days counting** — any shift `>= 1h` counts as a worked day. Overnight shifts (crossing midnight) count for the start day only when computing consecutive-days streaks.
 4. **Edit after swap approval** — once approved, the swap is final; subsequent shift edits notify assignees but don't revert. An edit while a swap is in-flight auto-cancels the swap (`ShiftsService.update` → `cancelActiveForShift`).
 5. **Location spanning timezone boundary** — out of scope; one IANA tz per location.
 
+## Time, DST & overnight handling
+
+- All persisted times are `timestamptz`. Display always uses the **shift's location timezone** via `date-fns-tz`.
+- Recurring availability windows store a `timezone` per row; the engine interprets each window in that tz. DST transitions are handled because we convert the shift's UTC instant to local wall-clock using `toZonedTime` before comparing minute-of-day. Same wall-clock minutes match before and after a DST jump.
+- **Overnight shifts** (e.g. 23:00–03:00) are split at midnight by the engine and each half is checked against the availability for its own weekday. Recurring availability windows themselves cannot cross midnight (CHECK `end_time > start_time`); to cover an overnight shift a staff member needs two windows (e.g. 22:00–24:00 on the start day and 00:00–03:00 on the end day).
+
 ## Known limitations / deferred
 
-- Manager-location scoping is not enforced on read paths (a manager can currently see shifts at locations they don't manage). Write paths are role-gated but not location-scoped.
 - Realtime is implemented for `notifications` only; other tables refresh via the notification side-channel (TanStack invalidations) rather than direct subscriptions.
-- Email "delivery" is a Pino log line + `email_simulated=true` flag on the notification row.
+- Email "delivery" is a Pino log line + `email_simulated=true` flag on the notification row. Per-user channel preference is honoured (`in_app` vs `in_app_email`).
 - Seed wipes `shifts`, `shift_assignments`, `swap_requests`, `overtime_overrides`, `notifications`, and `audit_log` on every run — locations/skills/users are upserted.
+- Concurrent assignment conflicts surface to the loser of the race via 409 (DB EXCLUDE GIST). The winner's update is propagated to the loser through the notification side-channel rather than a direct conflict toast.

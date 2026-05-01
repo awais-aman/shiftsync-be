@@ -17,6 +17,7 @@ import { SwapsModule } from '@/swaps/swaps.module';
 import { NotificationsModule } from '@/notifications/notifications.module';
 import { AuditModule } from '@/audit/audit.module';
 import { OnDutyModule } from '@/on-duty/on-duty.module';
+import { AnalyticsModule } from '@/analytics/analytics.module';
 import { ScopeModule } from '@/common/scope/scope.module';
 
 @Module({
@@ -41,6 +42,7 @@ import { ScopeModule } from '@/common/scope/scope.module';
     NotificationsModule,
     AuditModule,
     OnDutyModule,
+    AnalyticsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

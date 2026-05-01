@@ -67,15 +67,17 @@ export class NotificationsService {
 
   async notify(input: NotifyInput): Promise<void> {
     try {
+      const wantsEmail =
+        input.email === true && (await this.userWantsEmail(input.userId));
       await this.notificationRepository.create({
         userId: input.userId,
         type: input.type,
         title: input.title,
         body: input.body,
         payload: input.payload as never,
-        emailSimulated: input.email ?? false,
+        emailSimulated: wantsEmail,
       });
-      if (input.email) {
+      if (wantsEmail) {
         this.logger.log(
           `[email-sim] to=${input.userId} type=${input.type} title="${input.title}"`,
         );
@@ -93,6 +95,8 @@ export class NotificationsService {
   async notifyMany(inputs: NotifyInput[]): Promise<void> {
     if (inputs.length === 0) return;
     try {
+      const ids = Array.from(new Set(inputs.map((i) => i.userId)));
+      const emailEnabled = await this.userEmailMap(ids);
       await this.notificationRepository.createMany(
         inputs.map((i) => ({
           userId: i.userId,
@@ -100,13 +104,15 @@ export class NotificationsService {
           title: i.title,
           body: i.body,
           payload: i.payload as never,
-          emailSimulated: i.email ?? false,
+          emailSimulated: i.email === true && emailEnabled.get(i.userId) === true,
         })),
       );
-      for (const i of inputs.filter((i) => i.email)) {
-        this.logger.log(
-          `[email-sim] to=${i.userId} type=${i.type} title="${i.title}"`,
-        );
+      for (const i of inputs) {
+        if (i.email === true && emailEnabled.get(i.userId)) {
+          this.logger.log(
+            `[email-sim] to=${i.userId} type=${i.type} title="${i.title}"`,
+          );
+        }
       }
     } catch (error) {
       this.logger.error(
@@ -115,6 +121,49 @@ export class NotificationsService {
         }`,
       );
     }
+  }
+
+  private async userWantsEmail(userId: string): Promise<boolean> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { notificationChannel: true },
+    });
+    return user?.notificationChannel === 'in_app_email';
+  }
+
+  private async userEmailMap(
+    userIds: string[],
+  ): Promise<Map<string, boolean>> {
+    const map = new Map<string, boolean>();
+    if (userIds.length === 0) return map;
+    const rows = await this.prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, notificationChannel: true },
+    });
+    for (const row of rows) {
+      map.set(row.id, row.notificationChannel === 'in_app_email');
+    }
+    return map;
+  }
+
+  async getChannelFor(userId: string): Promise<{ channel: string }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { notificationChannel: true },
+    });
+    return { channel: user?.notificationChannel ?? 'in_app_email' };
+  }
+
+  async setChannelFor(
+    userId: string,
+    channel: 'in_app' | 'in_app_email',
+  ): Promise<{ channel: string }> {
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: { notificationChannel: channel },
+      select: { notificationChannel: true },
+    });
+    return { channel: updated.notificationChannel };
   }
 
   async listForUser(userId: string): Promise<NotificationDto[]> {

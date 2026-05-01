@@ -48,6 +48,11 @@ enum NotificationType {
   availability_changed
 }
 
+enum NotificationChannel {
+  in_app
+  in_app_email
+}
+
 enum AuditEntityType {
   shift
   shift_assignment
@@ -73,12 +78,13 @@ enum AuditAction {
 }
 
 model User {
-  id                  String   @id @db.Uuid
-  role                UserRole @default(staff)
-  displayName         String?  @map("display_name")
-  desiredHoursPerWeek Int?     @map("desired_hours_per_week")
-  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                       String              @id @db.Uuid
+  role                     UserRole            @default(staff)
+  displayName              String?             @map("display_name")
+  desiredHoursPerWeek      Int?                @map("desired_hours_per_week")
+  notificationChannel      NotificationChannel @default(in_app_email) @map("notification_channel")
+  createdAt                DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   certifications           StaffCertification[]
   skills                   StaffSkill[]

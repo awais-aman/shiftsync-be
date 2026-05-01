@@ -136,23 +136,57 @@ export class ConstraintEngine {
   }
 
   /**
-   * The shift fits within at least one availability window. Exceptions on the
-   * shift's date OVERRIDE the recurring schedule for that date.
+   * The shift fits within availability windows. Shifts crossing midnight
+   * (e.g. 23:00–03:00) are split into two same-day segments and each segment
+   * must fit availability for its respective weekday. Exceptions on the
+   * shift's local date OVERRIDE the recurring schedule for that date.
    */
   private isAvailable(ctx: EvaluationContext): boolean {
-    const { shift, availability } = ctx;
+    const { shift } = ctx;
     const tz = shift.locationTimezone;
     const startLocal = toZonedTime(shift.startAt, tz);
     const endLocal = toZonedTime(shift.endAt, tz);
 
-    const shiftStartMin = startLocal.getHours() * 60 + startLocal.getMinutes();
-    const shiftEndMin = endLocal.getHours() * 60 + endLocal.getMinutes();
-    const dateKey = this.formatDateInTz(shift.startAt, tz);
+    const startMin = startLocal.getHours() * 60 + startLocal.getMinutes();
+    const endMin = endLocal.getHours() * 60 + endLocal.getMinutes();
+    const startDate = this.formatDateInTz(shift.startAt, tz);
+    const endDate = this.formatDateInTz(shift.endAt, tz);
 
-    const dateExceptions = availability.exceptions.filter(
+    if (startDate === endDate) {
+      // Same-day shift: a single window must cover [startMin, endMin].
+      return this.isSegmentAvailable(
+        ctx,
+        startDate,
+        startLocal.getDay(),
+        startMin,
+        endMin,
+      );
+    }
+
+    // Overnight shift: split at midnight. First segment runs to 24:00 on the
+    // start date; second runs from 00:00 on the end date to endMin.
+    const startDay = startLocal.getDay();
+    const endDay = endLocal.getDay();
+    return (
+      this.isSegmentAvailable(ctx, startDate, startDay, startMin, 24 * 60) &&
+      this.isSegmentAvailable(ctx, endDate, endDay, 0, endMin)
+    );
+  }
+
+  private isSegmentAvailable(
+    ctx: EvaluationContext,
+    dateKey: string,
+    weekday: number,
+    segStart: number,
+    segEnd: number,
+  ): boolean {
+    if (segStart >= segEnd) return true;
+    const tz = ctx.shift.locationTimezone;
+    const dateExceptions = ctx.availability.exceptions.filter(
       (e) => e.date === dateKey,
     );
 
+    // Whole-day blackout exception.
     if (
       dateExceptions.some(
         (e) => !e.isAvailable && (!e.startTime || !e.endTime),
@@ -162,8 +196,8 @@ export class ConstraintEngine {
     }
 
     const baseWindows = this.recurringWindowsFor(
-      availability.recurring,
-      startLocal.getDay(),
+      ctx.availability.recurring,
+      weekday,
       tz,
     );
 
@@ -182,7 +216,7 @@ export class ConstraintEngine {
     }
 
     return effective.some(
-      ([start, end]) => start <= shiftStartMin && end >= shiftEndMin,
+      ([winStart, winEnd]) => winStart <= segStart && winEnd >= segEnd,
     );
   }
 

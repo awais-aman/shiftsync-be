@@ -1,9 +1,12 @@
 import {
+  BadRequestException,
+  Body,
   Controller,
   Get,
   Param,
   ParseUUIDPipe,
   Post,
+  Put,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -13,6 +16,7 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { IsIn } from 'class-validator';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { SupabaseJwtGuard } from '@/common/guards/supabase-jwt.guard';
 import { NotificationDto } from '@/notifications/dto/notification.dto';
@@ -22,6 +26,15 @@ import type { AuthenticatedUser } from '@/types/auth';
 
 class UnreadCountDto {
   count!: number;
+}
+
+class ChannelDto {
+  channel!: string;
+}
+
+class SetChannelDto {
+  @IsIn(['in_app', 'in_app_email'])
+  channel!: 'in_app' | 'in_app_email';
 }
 
 @ApiTags('Notifications')
@@ -48,6 +61,32 @@ export class NotificationsController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<UnreadCountDto> {
     return this.notificationsService.unreadCount(user.id);
+  }
+
+  @Get('channel')
+  @ApiOperation({
+    summary: 'Get the current user\'s notification channel preference',
+  })
+  @ApiOkResponse({ type: ChannelDto })
+  getChannel(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<ChannelDto> {
+    return this.notificationsService.getChannelFor(user.id);
+  }
+
+  @Put('channel')
+  @ApiOperation({
+    summary: 'Set notification channel: "in_app" or "in_app_email"',
+  })
+  @ApiOkResponse({ type: ChannelDto })
+  setChannel(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: SetChannelDto,
+  ): Promise<ChannelDto> {
+    if (body.channel !== 'in_app' && body.channel !== 'in_app_email') {
+      throw new BadRequestException('Invalid channel');
+    }
+    return this.notificationsService.setChannelFor(user.id, body.channel);
   }
 
   @Post('mark-all-read')
