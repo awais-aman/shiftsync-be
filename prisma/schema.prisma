@@ -45,6 +45,7 @@ enum NotificationType {
   swap_cancelled
   swap_expired
   overtime_warning
+  availability_changed
 }
 
 enum AuditEntityType {

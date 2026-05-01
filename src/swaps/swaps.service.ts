@@ -117,8 +117,7 @@ export class SwapsService {
       expiresAt,
     });
 
-    // Notify the targeted peer for swaps. For drops, no peer to notify; managers
-    // see the request in their approval queue.
+    // Notify the targeted peer for swaps.
     if (dto.type === SwapType.swap && dto.targetStaffId) {
       void this.notificationsService.notify({
         userId: dto.targetStaffId,
@@ -128,6 +127,18 @@ export class SwapsService {
         email: true,
       });
     }
+    // Notify managers of the shift's location so the approval queue surfaces live.
+    void this.notificationsService.notifyManagersOfLocation(
+      requestingAssignment.shift.locationId,
+      {
+        type: 'swap_requested',
+        title:
+          dto.type === SwapType.drop
+            ? 'New drop request needs approval'
+            : 'New swap request needs approval',
+        payload: { swapId: created.id },
+      },
+    );
     void this.auditService.record({
       actorId: staffId,
       entityType: 'swap_request',

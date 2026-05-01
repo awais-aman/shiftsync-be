@@ -16,12 +16,24 @@ import { CreateAvailabilityExceptionDto } from '@/availability/dto/create-except
 import { CreateRecurringAvailabilityDto } from '@/availability/dto/create-recurring.dto';
 import { AvailabilityExceptionDto } from '@/availability/dto/exception.dto';
 import { RecurringAvailabilityDto } from '@/availability/dto/recurring.dto';
+import { NotificationsService } from '@/notifications/notifications.service';
 
 @Injectable()
 export class AvailabilityService {
   constructor(
     private readonly availabilityRepository: AvailabilityRepository,
+    private readonly notificationsService: NotificationsService,
   ) {}
+
+  /** Notify managers of any location this staff is certified at. */
+  private notifyManagers(staffId: string, action: string): void {
+    void this.notificationsService.notifyManagersOfStaff(staffId, {
+      type: 'availability_changed',
+      title: 'Staff availability changed',
+      body: action,
+      payload: { staffId, action },
+    });
+  }
 
   async getForStaff(staffId: string): Promise<AvailabilityDto> {
     const [recurring, exceptions] = await Promise.all([
@@ -52,6 +64,7 @@ export class AvailabilityService {
         endTime: dto.endTime,
         timezone: dto.timezone,
       });
+      this.notifyManagers(staffId, 'recurring window added');
       return this.toRecurringDto(created);
     } catch (error) {
       if (
@@ -87,6 +100,7 @@ export class AvailabilityService {
         endTime: dto.endTime,
         timezone: dto.timezone,
       });
+      this.notifyManagers(staffId, 'recurring window updated');
       return this.toRecurringDto(updated);
     } catch (error) {
       if (
@@ -108,6 +122,7 @@ export class AvailabilityService {
       throw new ForbiddenException('Cannot modify another user\'s availability');
     }
     await this.availabilityRepository.deleteRecurring(id);
+    this.notifyManagers(staffId, 'recurring window removed');
   }
 
   async createException(
@@ -123,6 +138,7 @@ export class AvailabilityService {
       endTime: dto.endTime ?? null,
       timezone: dto.timezone,
     });
+    this.notifyManagers(staffId, 'exception added');
     return this.toExceptionDto(created);
   }
 
@@ -145,6 +161,7 @@ export class AvailabilityService {
       endTime: dto.endTime ?? null,
       timezone: dto.timezone,
     });
+    this.notifyManagers(staffId, 'exception updated');
     return this.toExceptionDto(updated);
   }
 
@@ -155,6 +172,7 @@ export class AvailabilityService {
       throw new ForbiddenException('Cannot modify another user\'s availability');
     }
     await this.availabilityRepository.deleteException(id);
+    this.notifyManagers(staffId, 'exception removed');
   }
 
   private validateExceptionTimes(dto: CreateAvailabilityExceptionDto): void {

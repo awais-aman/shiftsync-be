@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { Notification, NotificationType } from '@prisma/client';
+import { PrismaService } from '@/database/prisma.service';
 import { NotificationRepository } from '@/database/repositories/notification.repository';
 import { NotificationDto } from '@/notifications/dto/notification.dto';
 
@@ -18,13 +19,51 @@ export type NotifyInput = {
   email?: boolean;
 };
 
+export type NotifyTemplate = Omit<NotifyInput, 'userId'>;
+
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
 
   constructor(
     private readonly notificationRepository: NotificationRepository,
+    private readonly prisma: PrismaService,
   ) {}
+
+  /** Notify every manager who manages the given location. */
+  async notifyManagersOfLocation(
+    locationId: string,
+    template: NotifyTemplate,
+  ): Promise<void> {
+    const rows = await this.prisma.managerLocation.findMany({
+      where: { locationId },
+      select: { managerId: true },
+    });
+    if (rows.length === 0) return;
+    await this.notifyMany(
+      rows.map((r) => ({ ...template, userId: r.managerId })),
+    );
+  }
+
+  /** Notify every manager who manages at least one location the staff is certified at. */
+  async notifyManagersOfStaff(
+    staffId: string,
+    template: NotifyTemplate,
+  ): Promise<void> {
+    const rows = await this.prisma.managerLocation.findMany({
+      where: {
+        location: {
+          certifiedStaff: { some: { staffId } },
+        },
+      },
+      distinct: ['managerId'],
+      select: { managerId: true },
+    });
+    if (rows.length === 0) return;
+    await this.notifyMany(
+      rows.map((r) => ({ ...template, userId: r.managerId })),
+    );
+  }
 
   async notify(input: NotifyInput): Promise<void> {
     try {

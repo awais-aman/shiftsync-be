@@ -91,6 +91,7 @@ export class AssignmentsService {
     assignedById: string,
   ): Promise<AssignmentDto> {
     await this.assertCallerOwnsShift(shiftId, assignedById);
+    let capturedResult: ConstraintResult | null = null;
     try {
       const created = await this.assignmentRepository.createTransactional(
         shiftId,
@@ -98,6 +99,7 @@ export class AssignmentsService {
         assignedById,
         async (data) => {
           const result = this.runEngine(data, shiftId, staffId);
+          capturedResult = result;
           if (result.allowed) return { allowed: true };
           return {
             allowed: false,
@@ -118,6 +120,18 @@ export class AssignmentsService {
         where: { id: shiftId },
         select: { locationId: true },
       });
+      // Surface engine warnings (overtime / consecutive-days) to the manager
+      // who created the assignment so they can act on them.
+      const result = capturedResult as ConstraintResult | null;
+      if (result && result.warnings.length > 0 && shiftRow) {
+        void this.notificationsService.notify({
+          userId: assignedById,
+          type: 'overtime_warning',
+          title: 'Heads up: assignment crosses a soft threshold',
+          body: result.warnings.map((w) => w.message).join('; '),
+          payload: { shiftId, staffId, assignmentId: created.id },
+        });
+      }
       void this.auditService.record({
         actorId: assignedById,
         entityType: 'shift_assignment',
