@@ -1,98 +1,58 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# ShiftSync — Backend
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+NestJS API for the ShiftSync multi-location staff-scheduling platform. The frontend lives in [`shiftsync-fe`](https://github.com/awais-aman/shiftsync-fe).
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
-
-## Description
-
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
-## Project setup
+## Local development
 
 ```bash
-$ npm install
+npm install
+cp .env.example .env   # then fill in Supabase + DB values
+npx prisma migrate deploy
+npm run seed           # creates demo locations, staff, shifts, etc.
+npm run start:dev
 ```
 
-## Compile and run the project
+API listens on `http://localhost:4000/api`. Swagger docs at `http://localhost:4000/api/docs`.
 
-```bash
-# development
-$ npm run start
+## Seed credentials
 
-# watch mode
-$ npm run start:dev
+`npm run seed` creates the data set below (idempotent — safe to re-run). Same password for everyone:
 
-# production mode
-$ npm run start:prod
+```
+password: CoastalEats!2026
 ```
 
-## Run tests
+| Role    | Email                              | Notes |
+|---------|------------------------------------|-------|
+| admin   | admin@coastaleats.test             | Sees everything; can edit audit |
+| manager | east-manager@coastaleats.test      | Brooklyn + Boston |
+| manager | west-manager@coastaleats.test      | Santa Monica + Berkeley |
+| staff   | sarah@coastaleats.test             | West coast (PT), bartender + server, has 7th-day override |
+| staff   | john@coastaleats.test              | Cross-tz (Brooklyn + Santa Monica), bartender — drives the Timezone Tangle scenario |
+| staff   | maria@coastaleats.test             | East coast, server + host |
+| staff   | alex@coastaleats.test              | Berkeley only, line cook |
+| staff   | priya@coastaleats.test             | East coast, server + host |
+| staff   | tom@coastaleats.test               | Santa Monica only, line cook + server, has a vacation exception |
 
-```bash
-# unit tests
-$ npm run test
+The seed also creates ~10 shifts across the next 14 days (mix of draft + published, premium Fri/Sat 17:00+), ~9 assignments, one in-flight drop request (Tom), one in-flight swap request (John → Sarah), and one overtime override (Sarah, next Saturday).
 
-# e2e tests
-$ npm run test:e2e
+## API contract
 
-# test coverage
-$ npm run test:cov
-```
+OpenAPI is exposed at `GET /api/docs-json` (used by the FE's `npm run gen:types`). All endpoints require a Supabase JWT bearer token; role-restricted endpoints use admin/manager guards.
 
-## Deployment
+## Decisions on intentional spec ambiguities
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+These are the decisions baked into the implementation:
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+1. **De-certified staff & history** — past assignments are preserved untouched. We don't currently auto-clean future unpublished assignments at the de-certified location (manager-scoping work would handle this; deferred).
+2. **Desired hours vs availability** — availability is a hard constraint enforced by the engine; `desired_hours_per_week` is currently advisory and surfaces in fairness ranking only.
+3. **Consecutive-days counting** — any shift `>= 1h` counts as a worked day. Shifts crossing midnight count for the start day only.
+4. **Edit after swap approval** — once approved, the swap is final; subsequent shift edits notify assignees but don't revert. An edit while a swap is in-flight auto-cancels the swap (`ShiftsService.update` → `cancelActiveForShift`).
+5. **Location spanning timezone boundary** — out of scope; one IANA tz per location.
 
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
+## Known limitations / deferred
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+- Manager-location scoping is not enforced on read paths (a manager can currently see shifts at locations they don't manage). Write paths are role-gated but not location-scoped.
+- Realtime is implemented for `notifications` only; other tables refresh via the notification side-channel (TanStack invalidations) rather than direct subscriptions.
+- Email "delivery" is a Pino log line + `email_simulated=true` flag on the notification row.
+- Seed wipes `shifts`, `shift_assignments`, `swap_requests`, `overtime_overrides`, `notifications`, and `audit_log` on every run — locations/skills/users are upserted.
